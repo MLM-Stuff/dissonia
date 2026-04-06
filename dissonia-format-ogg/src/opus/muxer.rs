@@ -1,7 +1,7 @@
 use std::io::Write;
 
 use dissonia_core::audio::ChannelLayout;
-use dissonia_core::codecs::CodecId;
+use dissonia_core::codecs::{CodecId, CodecParameters};
 use dissonia_core::formats::{FinalizeSummary, FormatId, Muxer, TrackId, TrackSpec};
 use dissonia_core::packet::EncodedPacket;
 use dissonia_core::units::TimeBase;
@@ -187,9 +187,7 @@ where
 
         let pre_skip = match self.options.pre_skip {
             Some(value) => value,
-            None => u16::try_from(spec.codec_params.encoder_delay).map_err(|_| {
-                Error::Unsupported("opus encoder delay exceeds 16-bit pre-skip field")
-            })?,
+            None => default_pre_skip_from_codec_params(&spec.codec_params)?,
         };
 
         let id_header = build_opus_head(
@@ -466,6 +464,30 @@ where
             packet_count: self.packet_count,
         })
     }
+}
+
+fn default_pre_skip_from_codec_params(params: &CodecParameters) -> Result<u16> {
+    if params.sample_rate == 0 {
+        return Err(Error::InvalidArgument(
+            "ogg opus input sample rate must be non-zero",
+        ));
+    }
+
+    let numerator = u128::from(params.encoder_delay)
+        .checked_mul(48_000)
+        .ok_or(Error::InvalidState("ogg opus pre_skip overflow"))?;
+    let denominator = u128::from(params.sample_rate);
+
+    if numerator % denominator != 0 {
+        return Err(Error::InvalidArgument(
+            "opus encoder delay does not convert cleanly to 48 kHz pre_skip units",
+        ));
+    }
+
+    let pre_skip = numerator / denominator;
+
+    u16::try_from(pre_skip)
+        .map_err(|_| Error::Unsupported("opus pre_skip exceeds 16-bit header field"))
 }
 
 fn build_lacing_values(packet_len: usize) -> Result<Vec<u8>> {

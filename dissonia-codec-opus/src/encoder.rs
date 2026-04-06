@@ -4,6 +4,7 @@ use dissonia_core::packet::{EncodedPacket, PacketFlags};
 use dissonia_core::units::Timestamp;
 use dissonia_core::{Error, Result};
 
+use mousiki::c_style_api::opus_encoder::{opus_encoder_ctl, OpusEncoderCtlRequest};
 use mousiki::{
     Application as MousikiApplication, Bitrate as MousikiBitrate, Channels as MousikiChannels,
     Encoder as MousikiEncoder, EncoderBuilderError as MousikiEncoderBuilderError,
@@ -279,7 +280,8 @@ impl OpusEncoder {
             builder = builder.prediction_disabled(value);
         }
 
-        let encoder = builder.build().map_err(map_builder_error)?;
+        let mut encoder = builder.build().map_err(map_builder_error)?;
+        let encoder_delay = query_lookahead(&mut encoder)?;
 
         let frame_samples = frame_samples_for_duration(options.frame_duration, spec.sample_rate);
 
@@ -291,6 +293,8 @@ impl OpusEncoder {
                 u32::try_from(value).map_err(|_| Error::Unsupported("opus frame size exceeds u32"))
             })
             .transpose()?;
+        params.encoder_delay = encoder_delay;
+        params.encoder_padding = 0;
 
         Ok(Self {
             spec,
@@ -716,6 +720,18 @@ const fn to_mousiki_frame_duration(value: OpusFrameDuration) -> MousikiFrameDura
     }
 }
 
+fn query_lookahead(encoder: &mut MousikiEncoder) -> Result<u32> {
+    let mut lookahead = 0_i32;
+    opus_encoder_ctl(
+        encoder.as_raw_mut(),
+        OpusEncoderCtlRequest::GetLookahead(&mut lookahead),
+    )
+    .map_err(map_ctl_error)?;
+
+    u32::try_from(lookahead)
+        .map_err(|_| Error::InvalidState("opus encoder reported a negative lookahead"))
+}
+
 fn map_builder_error(error: MousikiEncoderBuilderError) -> Error {
     match error {
         MousikiEncoderBuilderError::Init(error) => map_init_error(error),
@@ -846,5 +862,15 @@ mod tests {
             Error::Unsupported(_) => {}
             other => panic!("unexpected error: {other}"),
         }
+    }
+
+    #[test]
+    fn fills_encoder_delay_from_lookahead() -> Result<()> {
+        let spec = AudioSpec::new(48_000, ChannelLayout::STEREO, SampleFormat::I16);
+        let encoder = OpusEncoder::new(spec)?;
+
+        assert!(encoder.codec_parameters().encoder_delay > 0);
+
+        Ok(())
     }
 }

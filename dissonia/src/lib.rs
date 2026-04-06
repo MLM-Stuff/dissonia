@@ -26,6 +26,12 @@ pub use dissonia_format_riff as format_riff;
 #[cfg(feature = "riff")]
 pub use dissonia_format_riff::{WavMuxer, WavMuxerBuilder, WavMuxerOptions};
 
+#[cfg(feature = "ogg")]
+pub use dissonia_format_ogg as format_ogg;
+
+#[cfg(feature = "ogg")]
+pub use dissonia_format_ogg::{OggOpusMuxer, OggOpusMuxerBuilder, OggOpusMuxerOptions};
+
 pub mod prelude {
     pub use dissonia_core::audio::{AudioBufferRef, AudioSpec, ChannelLayout, SampleFormat};
     pub use dissonia_core::codecs::{CodecId, CodecParameters, Encoder, PacketSink, VecPacketSink};
@@ -47,4 +53,7 @@ pub mod prelude {
 
     #[cfg(feature = "riff")]
     pub use dissonia_format_riff::{WavMuxer, WavMuxerBuilder, WavMuxerOptions};
+
+    #[cfg(feature = "ogg")]
+    pub use dissonia_format_ogg::{OggOpusMuxer, OggOpusMuxerBuilder, OggOpusMuxerOptions};
 }

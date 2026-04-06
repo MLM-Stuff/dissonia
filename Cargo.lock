@@ -22,6 +22,7 @@ dependencies = [
  "dissonia-codec-pcm",
  "dissonia-common",
  "dissonia-core",
+ "dissonia-format-ogg",
  "dissonia-format-riff",
 ]
 
@@ -47,6 +48,13 @@ version = "0.1.0"
 [[package]]
 name = "dissonia-core"
 version = "0.1.0"
+
+[[package]]
+name = "dissonia-format-ogg"
+version = "0.1.0"
+dependencies = [
+ "dissonia-core",
+]
 
 [[package]]
 name = "dissonia-format-riff"

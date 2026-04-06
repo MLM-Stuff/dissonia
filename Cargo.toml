@@ -6,6 +6,7 @@ members = [
     "dissonia-codec-pcm",
     "dissonia-codec-opus",
     "dissonia-format-riff",
+    "dissonia-format-ogg",
 ]
 resolver = "3"
 

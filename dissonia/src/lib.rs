@@ -11,6 +11,15 @@ pub use dissonia_codec_pcm as codec_pcm;
 #[cfg(feature = "pcm")]
 pub use dissonia_codec_pcm::{PcmEncoder, PcmEncoderBuilder, PcmEncoderOptions};
 
+#[cfg(feature = "opus")]
+pub use dissonia_codec_opus as codec_opus;
+
+#[cfg(feature = "opus")]
+pub use dissonia_codec_opus::{
+    OpusApplication, OpusBandwidth, OpusBitrate, OpusEncoder, OpusEncoderBuilder,
+    OpusEncoderOptions, OpusFrameDuration, OpusSignal,
+};
+
 #[cfg(feature = "riff")]
 pub use dissonia_format_riff as format_riff;
 
@@ -29,6 +38,12 @@ pub mod prelude {
 
     #[cfg(feature = "pcm")]
     pub use dissonia_codec_pcm::{PcmEncoder, PcmEncoderBuilder, PcmEncoderOptions};
+
+    #[cfg(feature = "opus")]
+    pub use dissonia_codec_opus::{
+        OpusApplication, OpusBandwidth, OpusBitrate, OpusEncoder, OpusEncoderBuilder,
+        OpusEncoderOptions, OpusFrameDuration, OpusSignal,
+    };
 
     #[cfg(feature = "riff")]
     pub use dissonia_format_riff::{WavMuxer, WavMuxerBuilder, WavMuxerOptions};

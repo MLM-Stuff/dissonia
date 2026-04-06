@@ -9,6 +9,7 @@ pub enum CodecId {
     PcmS32Le,
     PcmF32Le,
     PcmF64Le,
+    Opus,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]

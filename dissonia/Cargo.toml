@@ -6,14 +6,16 @@ license.workspace = true
 rust-version.workspace = true
 
 [features]
-default = ["pcm", "riff"]
+default = ["pcm", "opus", "riff"]
 pcm = ["dep:dissonia-codec-pcm"]
+opus = ["dep:dissonia-codec-opus"]
 riff = ["dep:dissonia-format-riff"]
 
 [dependencies]
 dissonia-common = { path = "../dissonia-common" }
 dissonia-core = { path = "../dissonia-core" }
 dissonia-codec-pcm = { path = "../dissonia-codec-pcm", optional = true }
+dissonia-codec-opus = { path = "../dissonia-codec-opus", optional = true }
 dissonia-format-riff = { path = "../dissonia-format-riff", optional = true }
 
 [lints]

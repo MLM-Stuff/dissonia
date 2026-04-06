@@ -14,7 +14,7 @@ pub use dissonia_codec_pcm::PcmEncoder;
 pub use dissonia_format_riff as format_riff;
 
 #[cfg(feature = "riff")]
-pub use dissonia_format_riff::WavMuxer;
+pub use dissonia_format_riff::{WavMuxer, WavMuxerBuilder, WavMuxerOptions};
 
 pub mod prelude {
     pub use dissonia_core::audio::{AudioBufferRef, AudioSpec, ChannelLayout, SampleFormat};
@@ -30,5 +30,5 @@ pub mod prelude {
     pub use dissonia_codec_pcm::PcmEncoder;
 
     #[cfg(feature = "riff")]
-    pub use dissonia_format_riff::WavMuxer;
+    pub use dissonia_format_riff::{WavMuxer, WavMuxerBuilder, WavMuxerOptions};
 }

@@ -59,6 +59,7 @@ pub struct OpusEncoderOptions {
     pub lsb_depth: Option<u8>,
     pub frame_duration: OpusFrameDuration,
     pub prediction_disabled: Option<bool>,
+    pub mapping_family: Option<u8>,
     pub max_packet_bytes: usize,
     pub pad_flush: bool,
 }
@@ -79,6 +80,7 @@ impl Default for OpusEncoderOptions {
             lsb_depth: None,
             frame_duration: OpusFrameDuration::Ms20,
             prediction_disabled: None,
+            mapping_family: None,
             max_packet_bytes: DEFAULT_MAX_PACKET_BYTES,
             pad_flush: true,
         }

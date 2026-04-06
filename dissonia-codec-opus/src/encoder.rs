@@ -1,5 +1,5 @@
 use dissonia_core::audio::{AudioBufferRef, AudioSpec, ChannelLayout, SampleFormat};
-use dissonia_core::codecs::{CodecId, CodecParameters, Encoder, PacketSink};
+use dissonia_core::codecs::{CodecId, CodecParameters, Encoder, OpusStreamMapping, PacketSink};
 use dissonia_core::packet::{EncodedPacket, PacketFlags};
 use dissonia_core::units::Timestamp;
 use dissonia_core::{Error, Result};
@@ -123,6 +123,12 @@ impl OpusEncoderBuilder {
     }
 
     #[must_use]
+    pub fn mapping_family(mut self, family: u8) -> Self {
+        self.options.mapping_family = Some(family);
+        self
+    }
+
+    #[must_use]
     pub fn max_packet_bytes(mut self, bytes: usize) -> Self {
         self.options.max_packet_bytes = bytes;
         self
@@ -226,6 +232,8 @@ impl OpusEncoder {
         validate_spec(spec)?;
         validate_options(options)?;
 
+        let stream_mapping = resolve_stream_mapping(spec.channels, options.mapping_family)?;
+
         let (mousiki_channels, channels) = to_mousiki_channels(spec.channels)?;
 
         let mut builder = MousikiEncoder::builder(
@@ -295,6 +303,7 @@ impl OpusEncoder {
             .transpose()?;
         params.encoder_delay = encoder_delay;
         params.encoder_padding = 0;
+        params.opus_stream_mapping = Some(stream_mapping);
 
         Ok(Self {
             spec,
@@ -620,6 +629,32 @@ fn validate_options(options: OpusEncoderOptions) -> Result<()> {
     Ok(())
 }
 
+fn resolve_stream_mapping(
+    layout: ChannelLayout,
+    requested_family: Option<u8>,
+) -> Result<OpusStreamMapping> {
+    match requested_family.unwrap_or(0) {
+        0 => family0_stream_mapping(layout),
+        family => Err(Error::Unsupported(match family {
+            1 => "opus surround/family-1 metadata is supported in CodecParameters and Ogg headers, but the multistream encoder backend is not wired yet",
+            255 => "opus family-255 metadata is supported in CodecParameters and Ogg headers, but the multistream encoder backend is not wired yet",
+            _ => "requested opus mapping family is not supported by the current encoder implementation",
+        })),
+    }
+}
+
+fn family0_stream_mapping(layout: ChannelLayout) -> Result<OpusStreamMapping> {
+    if layout == ChannelLayout::MONO {
+        Ok(OpusStreamMapping::new(0, 1, 0, Box::<[u8]>::default()))
+    } else if layout == ChannelLayout::STEREO {
+        Ok(OpusStreamMapping::new(0, 1, 1, Box::<[u8]>::default()))
+    } else {
+        Err(Error::Unsupported(
+            "opus mapping family 0 supports only mono or stereo",
+        ))
+    }
+}
+
 fn frame_count(sample_count: usize, channels: usize) -> Result<u64> {
     if channels == 0 {
         return Err(Error::InvalidState("encoder has zero channels"));
@@ -848,14 +883,7 @@ mod tests {
 
     #[test]
     fn rejects_surround_layout() {
-        let channels = ChannelLayout::FRONT_LEFT
-            | ChannelLayout::FRONT_RIGHT
-            | ChannelLayout::FRONT_CENTER
-            | ChannelLayout::LOW_FREQUENCY
-            | ChannelLayout::BACK_LEFT
-            | ChannelLayout::BACK_RIGHT;
-
-        let spec = AudioSpec::new(48_000, channels, SampleFormat::I16);
+        let spec = AudioSpec::new(48_000, ChannelLayout::SURROUND_5_1, SampleFormat::I16);
         let error = OpusEncoder::new(spec).unwrap_err();
 
         match error {
@@ -870,6 +898,25 @@ mod tests {
         let encoder = OpusEncoder::new(spec)?;
 
         assert!(encoder.codec_parameters().encoder_delay > 0);
+
+        Ok(())
+    }
+
+    #[test]
+    fn fills_family0_stream_mapping_metadata() -> Result<()> {
+        let spec = AudioSpec::new(48_000, ChannelLayout::STEREO, SampleFormat::I16);
+        let encoder = OpusEncoder::new(spec)?;
+
+        let mapping = encoder
+            .codec_parameters()
+            .opus_stream_mapping
+            .as_ref()
+            .unwrap();
+
+        assert_eq!(mapping.family, 0);
+        assert_eq!(mapping.stream_count, 1);
+        assert_eq!(mapping.coupled_stream_count, 1);
+        assert!(mapping.mapping.is_empty());
 
         Ok(())
     }

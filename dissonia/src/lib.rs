@@ -33,8 +33,12 @@ pub use dissonia_format_ogg as format_ogg;
 pub use dissonia_format_ogg::{OggOpusMuxer, OggOpusMuxerBuilder, OggOpusMuxerOptions};
 
 pub mod prelude {
-    pub use dissonia_core::audio::{AudioBufferRef, AudioSpec, ChannelLayout, SampleFormat};
-    pub use dissonia_core::codecs::{CodecId, CodecParameters, Encoder, PacketSink, VecPacketSink};
+    pub use dissonia_core::audio::{
+        AudioBufferRef, AudioSpec, ChannelLayout, ChannelPosition, SampleFormat,
+    };
+    pub use dissonia_core::codecs::{
+        CodecId, CodecParameters, Encoder, OpusStreamMapping, PacketSink, VecPacketSink,
+    };
     pub use dissonia_core::formats::{
         FinalizeSummary, FormatId, Muxer, MuxerExt, TrackId, TrackSpec, TrackWriter,
     };

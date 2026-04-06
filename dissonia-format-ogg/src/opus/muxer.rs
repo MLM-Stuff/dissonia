@@ -1,7 +1,7 @@
 use std::io::Write;
 
 use dissonia_core::audio::ChannelLayout;
-use dissonia_core::codecs::{CodecId, CodecParameters};
+use dissonia_core::codecs::{CodecId, CodecParameters, OpusStreamMapping};
 use dissonia_core::formats::{FinalizeSummary, FormatId, Muxer, TrackId, TrackSpec};
 use dissonia_core::packet::EncodedPacket;
 use dissonia_core::units::TimeBase;
@@ -174,16 +174,17 @@ where
             ));
         }
 
-        let channels = spec.codec_params.channels;
-        let channel_count = if channels == ChannelLayout::MONO {
-            1_u8
-        } else if channels == ChannelLayout::STEREO {
-            2_u8
-        } else {
-            return Err(Error::Unsupported(
-                "ogg opus v1 currently supports only mono or stereo family-0 streams",
+        let channel_count = u8::try_from(spec.codec_params.channels.count())
+            .map_err(|_| Error::Unsupported("ogg opus channel count exceeds u8"))?;
+
+        if channel_count == 0 {
+            return Err(Error::InvalidArgument(
+                "ogg opus channel count must be greater than zero",
             ));
-        };
+        }
+
+        let stream_mapping = spec.codec_params.opus_stream_mapping.as_ref();
+        validate_opus_stream_mapping(channel_count, stream_mapping)?;
 
         let pre_skip = match self.options.pre_skip {
             Some(value) => value,
@@ -195,6 +196,7 @@ where
             pre_skip,
             spec.codec_params.sample_rate,
             self.options.output_gain,
+            stream_mapping,
         )?;
 
         self.write_ogg_packet(&id_header, 0, OGG_HEADER_TYPE_BOS, 0)?;
@@ -466,6 +468,70 @@ where
     }
 }
 
+fn validate_opus_stream_mapping(
+    channel_count: u8,
+    stream_mapping: Option<&OpusStreamMapping>,
+) -> Result<()> {
+    let Some(stream_mapping) = stream_mapping else {
+        if channel_count > 2 {
+            return Err(Error::InvalidArgument(
+                "multichannel ogg opus tracks must provide opus_stream_mapping metadata",
+            ));
+        }
+
+        return Ok(());
+    };
+
+    if stream_mapping.family == 0 {
+        if channel_count > 2 {
+            return Err(Error::InvalidArgument(
+                "opus mapping family 0 supports only mono or stereo",
+            ));
+        }
+
+        if !stream_mapping.mapping.is_empty() {
+            return Err(Error::InvalidArgument(
+                "opus mapping family 0 must not provide a coded channel mapping table",
+            ));
+        }
+
+        if stream_mapping.stream_count != 1 {
+            return Err(Error::InvalidArgument(
+                "opus mapping family 0 must use exactly one stream",
+            ));
+        }
+
+        let expected_coupled = if channel_count == 2 { 1 } else { 0 };
+        if stream_mapping.coupled_stream_count != expected_coupled {
+            return Err(Error::InvalidArgument(
+                "opus mapping family 0 has an invalid coupled stream count",
+            ));
+        }
+
+        return Ok(());
+    }
+
+    if stream_mapping.stream_count == 0 {
+        return Err(Error::InvalidArgument(
+            "opus stream_count must be greater than zero",
+        ));
+    }
+
+    if stream_mapping.coupled_stream_count > stream_mapping.stream_count {
+        return Err(Error::InvalidArgument(
+            "opus coupled_stream_count must not exceed stream_count",
+        ));
+    }
+
+    if stream_mapping.mapping.len() != usize::from(channel_count) {
+        return Err(Error::InvalidArgument(
+            "opus channel mapping table length must equal channel count",
+        ));
+    }
+
+    Ok(())
+}
+
 fn default_pre_skip_from_codec_params(params: &CodecParameters) -> Result<u16> {
     if params.sample_rate == 0 {
         return Err(Error::InvalidArgument(
@@ -656,6 +722,35 @@ mod tests {
             Error::InvalidArgument(_) => {}
             other => panic!("unexpected error: {other}"),
         }
+    }
+
+    #[test]
+    fn writes_multistream_opus_head_for_surround() -> Result<()> {
+        let spec = AudioSpec::new(48_000, ChannelLayout::SURROUND_5_1, SampleFormat::I16);
+        let mut params = CodecParameters::new(CodecId::Opus, spec);
+        params.opus_stream_mapping =
+            Some(OpusStreamMapping::new(1, 4, 2, vec![0_u8, 4, 1, 2, 3, 5]));
+
+        let mut muxer = OggOpusMuxer::new(Cursor::new(Vec::<u8>::new()));
+        let track = muxer.add_track(TrackSpec::new(params, TimeBase::audio_sample_rate(48_000)))?;
+
+        let mut packet = EncodedPacket::new(vec![0xF8, 0xAA]);
+        packet.duration = Some(960);
+        muxer.write_packet(track, packet)?;
+        muxer.finalize()?;
+
+        let bytes = muxer.into_inner().into_inner();
+        let pages = split_pages(&bytes);
+        let id = page_payload(pages[0]);
+
+        assert!(id.starts_with(b"OpusHead"));
+        assert_eq!(id[9], 6);
+        assert_eq!(id[18], 1);
+        assert_eq!(id[19], 4);
+        assert_eq!(id[20], 2);
+        assert_eq!(&id[21..27], &[0, 4, 1, 2, 3, 5]);
+
+        Ok(())
     }
 
     fn split_pages(bytes: &[u8]) -> Vec<&[u8]> {

@@ -7,8 +7,14 @@ pub use dissonia_core as core;
 #[cfg(feature = "pcm")]
 pub use dissonia_codec_pcm as codec_pcm;
 
+#[cfg(feature = "pcm")]
+pub use dissonia_codec_pcm::PcmEncoder;
+
 #[cfg(feature = "riff")]
 pub use dissonia_format_riff as format_riff;
+
+#[cfg(feature = "riff")]
+pub use dissonia_format_riff::WavMuxer;
 
 pub mod prelude {
     pub use dissonia_core::audio::{AudioBufferRef, AudioSpec, ChannelLayout, SampleFormat};
@@ -19,4 +25,10 @@ pub mod prelude {
     pub use dissonia_core::packet::{EncodedPacket, PacketFlags};
     pub use dissonia_core::units::{TimeBase, Timestamp};
     pub use dissonia_core::{Error, Result};
+
+    #[cfg(feature = "pcm")]
+    pub use dissonia_codec_pcm::PcmEncoder;
+
+    #[cfg(feature = "riff")]
+    pub use dissonia_format_riff::WavMuxer;
 }

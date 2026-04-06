@@ -1,13 +1,11 @@
-use std::io::{Seek, SeekFrom, Write};
+use std::io::{Seek, Write};
 
+use dissonia_common::riff::{ChunkHandle, RiffWriter};
 use dissonia_core::formats::{FinalizeSummary, FormatId, Muxer, TrackId, TrackSpec};
 use dissonia_core::packet::EncodedPacket;
 use dissonia_core::{Error, Result};
 
-use super::header::{
-    wav_codec_info, write_classic_header, write_extensible_header, CLASSIC_DATA_SIZE_OFFSET,
-    CLASSIC_HEADER_LEN, EXTENSIBLE_DATA_SIZE_OFFSET, EXTENSIBLE_HEADER_LEN, RIFF_SIZE_OFFSET,
-};
+use super::header::{wav_codec_info, write_classic_fmt_payload, write_extensible_fmt_payload};
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct WavMuxerOptions {
@@ -44,7 +42,7 @@ impl<W> WavMuxerBuilder<W> {
     #[must_use]
     pub fn build(self) -> WavMuxer<W> {
         WavMuxer {
-            writer: self.writer,
+            writer: RiffWriter::new(self.writer),
             options: self.options,
             track: None,
             data_bytes: 0,
@@ -56,7 +54,7 @@ impl<W> WavMuxerBuilder<W> {
 
 #[derive(Debug)]
 pub struct WavMuxer<W> {
-    writer: W,
+    writer: RiffWriter<W>,
     options: WavMuxerOptions,
     track: Option<TrackState>,
     data_bytes: u64,
@@ -68,8 +66,9 @@ pub struct WavMuxer<W> {
 struct TrackState {
     id: TrackId,
     block_align: u16,
-    data_size_offset: u64,
-    header_len: u64,
+    riff_chunk: ChunkHandle,
+    data_chunk: ChunkHandle,
+    max_padded_data_len: u64,
 }
 
 impl<W> WavMuxer<W> {
@@ -85,7 +84,7 @@ impl<W> WavMuxer<W> {
 
     #[must_use]
     pub fn into_inner(self) -> W {
-        self.writer
+        self.writer.into_inner()
     }
 }
 
@@ -126,12 +125,13 @@ where
             .checked_mul(block_align_u32)
             .ok_or(Error::Unsupported("wav byte rate exceeds u32"))?;
 
-        self.writer.seek(SeekFrom::Start(0))?;
+        let riff_chunk = self.writer.start_riff(*b"WAVE")?;
 
+        let fmt_chunk = self.writer.start_chunk(*b"fmt ")?;
         let use_extensible = self.options.force_extensible || channels > 2;
 
         if use_extensible {
-            write_extensible_header(
+            write_extensible_fmt_payload(
                 &mut self.writer,
                 codec,
                 channels,
@@ -140,15 +140,8 @@ where
                 block_align,
                 spec.codec_params.channels.bits(),
             )?;
-
-            Ok(TrackState {
-                id: TrackId(0),
-                block_align,
-                data_size_offset: EXTENSIBLE_DATA_SIZE_OFFSET,
-                header_len: EXTENSIBLE_HEADER_LEN,
-            })
         } else {
-            write_classic_header(
+            write_classic_fmt_payload(
                 &mut self.writer,
                 codec,
                 channels,
@@ -156,14 +149,28 @@ where
                 byte_rate,
                 block_align,
             )?;
-
-            Ok(TrackState {
-                id: TrackId(0),
-                block_align,
-                data_size_offset: CLASSIC_DATA_SIZE_OFFSET,
-                header_len: CLASSIC_HEADER_LEN,
-            })
         }
+
+        self.writer.finish_chunk(fmt_chunk)?;
+
+        let data_chunk = self.writer.start_chunk(*b"data")?;
+
+        let base_riff_size = data_chunk
+            .size_data_start()
+            .checked_sub(8)
+            .ok_or(Error::InvalidState("invalid data chunk position"))?;
+
+        let max_padded_data_len = (u32::MAX as u64)
+            .checked_sub(base_riff_size)
+            .ok_or(Error::Unsupported("wav header exceeds riff size limits"))?;
+
+        Ok(TrackState {
+            id: TrackId(0),
+            block_align,
+            riff_chunk,
+            data_chunk,
+            max_padded_data_len,
+        })
     }
 }
 
@@ -224,7 +231,7 @@ where
             .checked_add(next_data_bytes & 1)
             .ok_or(Error::InvalidState("wav padded data size overflow"))?;
 
-        if padded_len > max_padded_data_len(state.header_len) {
+        if padded_len > state.max_padded_data_len {
             return Err(Error::Unsupported("wav file exceeds riff size limits"));
         }
 
@@ -251,45 +258,18 @@ where
             .track
             .ok_or(Error::InvalidState("cannot finalize wav without a track"))?;
 
-        if self.data_bytes & 1 == 1 {
-            self.writer.write_all(&[0])?;
-        }
+        self.writer.finish_chunk(state.data_chunk)?;
+        self.writer.finish_chunk(state.riff_chunk)?;
 
-        let padded_data_len = self
-            .data_bytes
-            .checked_add(self.data_bytes & 1)
-            .ok_or(Error::InvalidState("wav padded data size overflow"))?;
-
-        let riff_size = (state.header_len - 8)
-            .checked_add(padded_data_len)
-            .ok_or(Error::InvalidState("riff size overflow"))?;
-
-        let riff_size_u32 =
-            u32::try_from(riff_size).map_err(|_| Error::Unsupported("riff size exceeds u32"))?;
-        let data_size_u32 = u32::try_from(self.data_bytes)
-            .map_err(|_| Error::Unsupported("data chunk size exceeds u32"))?;
-
-        self.writer.seek(SeekFrom::Start(RIFF_SIZE_OFFSET))?;
-        self.writer.write_all(&riff_size_u32.to_le_bytes())?;
-
-        self.writer.seek(SeekFrom::Start(state.data_size_offset))?;
-        self.writer.write_all(&data_size_u32.to_le_bytes())?;
-
-        self.writer
-            .seek(SeekFrom::Start(state.header_len + padded_data_len))?;
+        let bytes_written = self.writer.position()?;
         self.writer.flush()?;
-
         self.finalized = true;
 
         Ok(FinalizeSummary {
-            bytes_written: Some(state.header_len + padded_data_len),
+            bytes_written: Some(bytes_written),
             packet_count: self.packet_count,
         })
     }
-}
-
-const fn max_padded_data_len(header_len: u64) -> u64 {
-    u32::MAX as u64 - (header_len - 8)
 }
 
 #[cfg(test)]

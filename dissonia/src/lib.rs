@@ -2,6 +2,7 @@
 #![deny(rust_2018_idioms)]
 #![deny(missing_debug_implementations)]
 
+pub use dissonia_common as common;
 pub use dissonia_core as core;
 
 #[cfg(feature = "pcm")]

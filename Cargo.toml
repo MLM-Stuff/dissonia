@@ -1,6 +1,7 @@
 [workspace]
 members = [
     "dissonia",
+    "dissonia-common",
     "dissonia-core",
     "dissonia-codec-pcm",
     "dissonia-format-riff",

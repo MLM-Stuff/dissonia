@@ -11,6 +11,7 @@ pcm = ["dep:dissonia-codec-pcm"]
 riff = ["dep:dissonia-format-riff"]
 
 [dependencies]
+dissonia-common = { path = "../dissonia-common" }
 dissonia-core = { path = "../dissonia-core" }
 dissonia-codec-pcm = { path = "../dissonia-codec-pcm", optional = true }
 dissonia-format-riff = { path = "../dissonia-format-riff", optional = true }

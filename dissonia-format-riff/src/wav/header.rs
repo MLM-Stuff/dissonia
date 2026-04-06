@@ -3,17 +3,8 @@ use std::io::Write;
 use dissonia_core::codecs::CodecId;
 use dissonia_core::{Error, Result};
 
-pub(crate) const RIFF_SIZE_OFFSET: u64 = 4;
-
-pub(crate) const CLASSIC_DATA_SIZE_OFFSET: u64 = 40;
-pub(crate) const CLASSIC_HEADER_LEN: u64 = 44;
-
-pub(crate) const EXTENSIBLE_DATA_SIZE_OFFSET: u64 = 64;
-pub(crate) const EXTENSIBLE_HEADER_LEN: u64 = 68;
-
 const WAVE_FORMAT_PCM: u16 = 0x0001;
 const WAVE_FORMAT_IEEE_FLOAT: u16 = 0x0003;
-const WAVE_FORMAT_EXTENSIBLE: u16 = 0xfffe;
 
 const KSDATAFORMAT_SUBTYPE_PCM: [u8; 16] = [
     0x01, 0x00, 0x00, 0x00, //
@@ -81,7 +72,7 @@ pub(crate) fn wav_codec_info(codec: CodecId) -> Result<WavCodecInfo> {
     }
 }
 
-pub(crate) fn write_classic_header<W>(
+pub(crate) fn write_classic_fmt_payload<W>(
     writer: &mut W,
     codec: WavCodecInfo,
     channels: u16,
@@ -92,26 +83,16 @@ pub(crate) fn write_classic_header<W>(
 where
     W: Write,
 {
-    writer.write_all(b"RIFF")?;
-    write_u32_le(writer, 0)?;
-    writer.write_all(b"WAVE")?;
-
-    writer.write_all(b"fmt ")?;
-    write_u32_le(writer, 16)?;
-    write_u16_le(writer, codec.classic_format_tag)?;
-    write_u16_le(writer, channels)?;
-    write_u32_le(writer, sample_rate)?;
-    write_u32_le(writer, byte_rate)?;
-    write_u16_le(writer, block_align)?;
-    write_u16_le(writer, codec.bits_per_sample)?;
-
-    writer.write_all(b"data")?;
-    write_u32_le(writer, 0)?;
-
+    writer.write_all(&codec.classic_format_tag.to_le_bytes())?;
+    writer.write_all(&channels.to_le_bytes())?;
+    writer.write_all(&sample_rate.to_le_bytes())?;
+    writer.write_all(&byte_rate.to_le_bytes())?;
+    writer.write_all(&block_align.to_le_bytes())?;
+    writer.write_all(&codec.bits_per_sample.to_le_bytes())?;
     Ok(())
 }
 
-pub(crate) fn write_extensible_header<W>(
+pub(crate) fn write_extensible_fmt_payload<W>(
     writer: &mut W,
     codec: WavCodecInfo,
     channels: u16,
@@ -123,41 +104,15 @@ pub(crate) fn write_extensible_header<W>(
 where
     W: Write,
 {
-    writer.write_all(b"RIFF")?;
-    write_u32_le(writer, 0)?;
-    writer.write_all(b"WAVE")?;
-
-    writer.write_all(b"fmt ")?;
-    write_u32_le(writer, 40)?;
-    write_u16_le(writer, WAVE_FORMAT_EXTENSIBLE)?;
-    write_u16_le(writer, channels)?;
-    write_u32_le(writer, sample_rate)?;
-    write_u32_le(writer, byte_rate)?;
-    write_u16_le(writer, block_align)?;
-    write_u16_le(writer, codec.bits_per_sample)?;
-    write_u16_le(writer, 22)?;
-    write_u16_le(writer, codec.bits_per_sample)?;
-    write_u32_le(writer, channel_mask)?;
+    writer.write_all(&0xfffe_u16.to_le_bytes())?;
+    writer.write_all(&channels.to_le_bytes())?;
+    writer.write_all(&sample_rate.to_le_bytes())?;
+    writer.write_all(&byte_rate.to_le_bytes())?;
+    writer.write_all(&block_align.to_le_bytes())?;
+    writer.write_all(&codec.bits_per_sample.to_le_bytes())?;
+    writer.write_all(&22_u16.to_le_bytes())?;
+    writer.write_all(&codec.bits_per_sample.to_le_bytes())?;
+    writer.write_all(&channel_mask.to_le_bytes())?;
     writer.write_all(&codec.extensible_subformat)?;
-
-    writer.write_all(b"data")?;
-    write_u32_le(writer, 0)?;
-
-    Ok(())
-}
-
-fn write_u16_le<W>(writer: &mut W, value: u16) -> Result<()>
-where
-    W: Write,
-{
-    writer.write_all(&value.to_le_bytes())?;
-    Ok(())
-}
-
-fn write_u32_le<W>(writer: &mut W, value: u32) -> Result<()>
-where
-    W: Write,
-{
-    writer.write_all(&value.to_le_bytes())?;
     Ok(())
 }

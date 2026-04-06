@@ -1,0 +1,12 @@
+[package]
+name = "dissonia-codec-pcm"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+dissonia-core = { path = "../dissonia-core" }
+
+[lints]
+workspace = true

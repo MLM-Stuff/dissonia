@@ -1,0 +1,19 @@
+[package]
+name = "dissonia"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[features]
+default = ["pcm", "riff"]
+pcm = ["dep:dissonia-codec-pcm"]
+riff = ["dep:dissonia-format-riff"]
+
+[dependencies]
+dissonia-core = { path = "../dissonia-core" }
+dissonia-codec-pcm = { path = "../dissonia-codec-pcm", optional = true }
+dissonia-format-riff = { path = "../dissonia-format-riff", optional = true }
+
+[lints]
+workspace = true

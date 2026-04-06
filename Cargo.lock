@@ -5,3 +5,26 @@ version = 4
 [[package]]
 name = "dissonia"
 version = "0.1.0"
+dependencies = [
+ "dissonia-codec-pcm",
+ "dissonia-core",
+ "dissonia-format-riff",
+]
+
+[[package]]
+name = "dissonia-codec-pcm"
+version = "0.1.0"
+dependencies = [
+ "dissonia-core",
+]
+
+[[package]]
+name = "dissonia-core"
+version = "0.1.0"
+
+[[package]]
+name = "dissonia-format-riff"
+version = "0.1.0"
+dependencies = [
+ "dissonia-core",
+]

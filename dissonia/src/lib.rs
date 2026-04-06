@@ -9,7 +9,7 @@ pub use dissonia_core as core;
 pub use dissonia_codec_pcm as codec_pcm;
 
 #[cfg(feature = "pcm")]
-pub use dissonia_codec_pcm::PcmEncoder;
+pub use dissonia_codec_pcm::{PcmEncoder, PcmEncoderBuilder, PcmEncoderOptions};
 
 #[cfg(feature = "riff")]
 pub use dissonia_format_riff as format_riff;
@@ -28,7 +28,7 @@ pub mod prelude {
     pub use dissonia_core::{Error, Result};
 
     #[cfg(feature = "pcm")]
-    pub use dissonia_codec_pcm::PcmEncoder;
+    pub use dissonia_codec_pcm::{PcmEncoder, PcmEncoderBuilder, PcmEncoderOptions};
 
     #[cfg(feature = "riff")]
     pub use dissonia_format_riff::{WavMuxer, WavMuxerBuilder, WavMuxerOptions};

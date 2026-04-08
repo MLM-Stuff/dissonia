@@ -52,8 +52,8 @@ pub mod prelude {
         AudioBufferRef, AudioSpec, ChannelLayout, ChannelPosition, SampleFormat,
     };
     pub use dissonia_core::codecs::{
-        CodecId, CodecParameters, CodecSpecific, Encoder, FlacStreamInfo, OpusStreamMapping,
-        PacketSink, VecPacketSink,
+        opus_family1_stream_mapping, opus_surround_channel_order, CodecId, CodecParameters,
+        CodecSpecific, Encoder, FlacStreamInfo, OpusStreamMapping, PacketSink, VecPacketSink,
     };
     pub use dissonia_core::formats::{
         FinalizeSummary, FormatId, Muxer, MuxerExt, TrackId, TrackSpec, TrackWriter,

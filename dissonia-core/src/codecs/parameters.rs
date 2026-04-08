@@ -118,3 +118,71 @@ impl CodecParameters {
         }
     }
 }
+
+use crate::audio::ChannelPosition;
+
+pub fn opus_surround_channel_order(channel_count: u8) -> Option<&'static [ChannelPosition]> {
+    use crate::audio::ChannelPosition::*;
+
+    match channel_count {
+        1 => Some(&[FrontCenter]),
+        2 => Some(&[FrontLeft, FrontRight]),
+        3 => Some(&[FrontLeft, FrontCenter, FrontRight]),
+        4 => Some(&[FrontLeft, FrontRight, BackLeft, BackRight]),
+        5 => Some(&[FrontLeft, FrontCenter, FrontRight, BackLeft, BackRight]),
+        6 => Some(&[
+            FrontLeft,
+            FrontCenter,
+            FrontRight,
+            BackLeft,
+            BackRight,
+            LowFrequency,
+        ]),
+        7 => Some(&[
+            FrontLeft,
+            FrontCenter,
+            FrontRight,
+            SideLeft,
+            SideRight,
+            BackCenter,
+            LowFrequency,
+        ]),
+        8 => Some(&[
+            FrontLeft,
+            FrontCenter,
+            FrontRight,
+            SideLeft,
+            SideRight,
+            BackLeft,
+            BackRight,
+            LowFrequency,
+        ]),
+        _ => None,
+    }
+}
+
+pub fn opus_family1_stream_mapping(channel_count: u8) -> Option<OpusStreamMapping> {
+    let order = opus_surround_channel_order(channel_count)?;
+    let channels = order.len();
+
+    let (stream_count, coupled_count): (u8, u8) = match channel_count {
+        1 => (1, 0),
+        2 => (1, 1),
+        3 => (2, 1),
+        4 => (2, 2),
+        5 => (3, 2),
+        6 => (4, 2),
+        7 => (5, 2),
+        8 => (5, 3),
+        _ => return None,
+    };
+
+    let mapping: Vec<u8> = (0..channels as u8).collect();
+
+    Some(OpusStreamMapping::new(
+        1,
+        stream_count,
+        coupled_count,
+        mapping,
+    ))
+}

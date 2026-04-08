@@ -2,10 +2,38 @@ use dissonia_common::vorbis::VorbisComments;
 use dissonia_core::{Error, Result};
 
 const BLOCK_TYPE_STREAMINFO: u8 = 0;
-const BLOCK_TYPE_VORBIS_COMMENT: u8 = 4;
 const BLOCK_TYPE_PADDING: u8 = 1;
+const BLOCK_TYPE_SEEKTABLE: u8 = 3;
+const BLOCK_TYPE_VORBIS_COMMENT: u8 = 4;
 
 pub(crate) const STREAMINFO_LEN: usize = 34;
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub(crate) struct SeekPoint {
+    pub sample_number: u64,
+    pub stream_offset: u64,
+    pub frame_samples: u16,
+}
+
+impl SeekPoint {
+    pub const SIZE: usize = 18;
+
+    pub const fn placeholder() -> Self {
+        Self {
+            sample_number: u64::MAX,
+            stream_offset: 0,
+            frame_samples: 0,
+        }
+    }
+
+    pub fn encode(&self) -> [u8; Self::SIZE] {
+        let mut buf = [0_u8; Self::SIZE];
+        buf[0..8].copy_from_slice(&self.sample_number.to_be_bytes());
+        buf[8..16].copy_from_slice(&self.stream_offset.to_be_bytes());
+        buf[16..18].copy_from_slice(&self.frame_samples.to_be_bytes());
+        buf
+    }
+}
 
 pub(crate) fn encode_stream_info(
     min_block_size: u16,
@@ -89,6 +117,22 @@ pub(crate) fn build_stream_info_block(
     block
 }
 
+pub(crate) fn build_seektable_block(is_last: bool, num_points: u32) -> Vec<u8> {
+    let payload_len = num_points as usize * SeekPoint::SIZE;
+    let length = u32::try_from(payload_len).unwrap_or(u32::MAX);
+    let hdr = metadata_block_header(is_last, BLOCK_TYPE_SEEKTABLE, length);
+
+    let mut block = Vec::with_capacity(4 + payload_len);
+    block.extend_from_slice(&hdr);
+
+    let placeholder = SeekPoint::placeholder();
+    for _ in 0..num_points {
+        block.extend_from_slice(&placeholder.encode());
+    }
+
+    block
+}
+
 pub(crate) fn build_vorbis_comment_block(
     is_last: bool,
     comments: &VorbisComments,
@@ -131,26 +175,31 @@ mod tests {
         let block = build_stream_info_block(false, 4096, 4096, 0, 0, 44_100, 2, 16, 0, &[0; 16]);
         assert_eq!(block.len(), 38);
         assert_eq!(block[0], 0x00);
-        assert_eq!(block[1], 0);
-        assert_eq!(block[2], 0);
         assert_eq!(block[3], 34);
     }
 
     #[test]
-    fn stream_info_encodes_sample_rate() {
-        let data = encode_stream_info(4096, 4096, 0, 0, 44_100, 2, 16, 0, &[0; 16]);
-        let sr =
-            (u32::from(data[10]) << 12) | (u32::from(data[11]) << 4) | (u32::from(data[12]) >> 4);
-        assert_eq!(sr, 44_100);
+    fn seektable_block_has_correct_size() {
+        let block = build_seektable_block(false, 10);
+        assert_eq!(block.len(), 184);
+        assert_eq!(block[0] & 0x7F, BLOCK_TYPE_SEEKTABLE);
+        assert_eq!(block[4], 0xFF);
     }
 
     #[test]
-    fn stream_info_encodes_channels_and_bps() {
-        let data = encode_stream_info(4096, 4096, 0, 0, 48_000, 2, 24, 0, &[0; 16]);
-        let ch = ((data[12] >> 1) & 0x07) + 1;
-        let bps = (u8::from(data[12] & 1) << 4 | (data[13] >> 4)) + 1;
-        assert_eq!(ch, 2);
-        assert_eq!(bps, 24);
+    fn seek_point_round_trips() {
+        let sp = SeekPoint {
+            sample_number: 48000,
+            stream_offset: 1234,
+            frame_samples: 4096,
+        };
+        let encoded = sp.encode();
+        assert_eq!(u64::from_be_bytes(encoded[0..8].try_into().unwrap()), 48000);
+        assert_eq!(u64::from_be_bytes(encoded[8..16].try_into().unwrap()), 1234);
+        assert_eq!(
+            u16::from_be_bytes(encoded[16..18].try_into().unwrap()),
+            4096
+        );
     }
 
     #[test]

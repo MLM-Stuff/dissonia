@@ -36,6 +36,12 @@ impl FlacEncoderBuilder {
         self
     }
 
+    #[must_use]
+    pub fn stereo_decorrelation(mut self, enabled: bool) -> Self {
+        self.options.stereo_decorrelation = enabled;
+        self
+    }
+
     pub fn build(self) -> Result<FlacEncoder> {
         FlacEncoder::with_options(self.spec, self.options)
     }
@@ -157,6 +163,8 @@ impl FlacEncoder {
 
         let channel_refs: Vec<&[i64]> = channel_bufs.iter().map(|v| v.as_slice()).collect();
 
+        let try_stereo = self.options.stereo_decorrelation && self.channels == 2;
+
         let frame_bytes = frame::encode_frame(
             &channel_refs,
             self.frame_number,
@@ -165,6 +173,7 @@ impl FlacEncoder {
             block_size,
             self.options.max_fixed_order,
             self.options.max_rice_partition_order,
+            try_stereo,
         );
 
         let pts = Timestamp::new(self.next_pts);

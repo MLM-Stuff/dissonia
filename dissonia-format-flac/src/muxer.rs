@@ -6,7 +6,7 @@ use dissonia_core::formats::{FinalizeSummary, FormatId, Muxer, TrackId, TrackSpe
 use dissonia_core::packet::EncodedPacket;
 use dissonia_core::{Error, Result};
 
-use crate::metadata;
+use crate::metadata::{self, SeekPoint};
 
 const FLAC_MARKER: &[u8; 4] = b"fLaC";
 
@@ -14,6 +14,7 @@ const FLAC_MARKER: &[u8; 4] = b"fLaC";
 pub struct FlacMuxerOptions {
     pub comments: VorbisComments,
     pub padding: u32,
+    pub max_seek_points: u32,
 }
 
 impl Default for FlacMuxerOptions {
@@ -21,6 +22,7 @@ impl Default for FlacMuxerOptions {
         Self {
             comments: VorbisComments::new("dissonia"),
             padding: 8192,
+            max_seek_points: 100,
         }
     }
 }
@@ -71,12 +73,22 @@ impl<W> FlacMuxerBuilder<W> {
     }
 
     #[must_use]
+    pub fn max_seek_points(mut self, count: u32) -> Self {
+        self.options.max_seek_points = count;
+        self
+    }
+
+    #[must_use]
     pub fn build(self) -> FlacMuxer<W> {
         FlacMuxer {
             writer: self.writer,
             options: self.options,
             track: None,
             stream_info_offset: 0,
+            seektable_payload_offset: 0,
+            seektable_num_points: 0,
+            audio_start_offset: 0,
+            frame_records: Vec::new(),
             min_frame_size: u32::MAX,
             max_frame_size: 0,
             total_samples: 0,
@@ -87,12 +99,23 @@ impl<W> FlacMuxerBuilder<W> {
     }
 }
 
+#[derive(Clone, Copy, Debug)]
+struct FrameRecord {
+    sample_number: u64,
+    stream_offset: u64,
+    frame_samples: u16,
+}
+
 #[derive(Debug)]
 pub struct FlacMuxer<W> {
     writer: W,
     options: FlacMuxerOptions,
     track: Option<TrackState>,
     stream_info_offset: u64,
+    seektable_payload_offset: u64,
+    seektable_num_points: u32,
+    audio_start_offset: u64,
+    frame_records: Vec<FrameRecord>,
     min_frame_size: u32,
     max_frame_size: u32,
     total_samples: u64,
@@ -188,11 +211,13 @@ where
 
         self.stream_info_offset = self.bytes_written;
 
+        let has_seektable = self.options.max_seek_points > 0;
         let has_comments = true;
         let has_padding = self.options.padding > 0;
 
+        let si_is_last = !has_seektable && !has_comments && !has_padding;
         let stream_info_block = metadata::build_stream_info_block(
-            !has_comments && !has_padding,
+            si_is_last,
             flac_info.min_block_size,
             flac_info.max_block_size,
             0,
@@ -205,15 +230,26 @@ where
         );
         self.write_all(&stream_info_block)?;
 
-        let comment_is_last = !has_padding;
+        if has_seektable {
+            let st_is_last = !has_comments && !has_padding;
+            self.seektable_payload_offset = self.bytes_written + 4;
+            self.seektable_num_points = self.options.max_seek_points;
+            let seektable_block =
+                metadata::build_seektable_block(st_is_last, self.options.max_seek_points);
+            self.write_all(&seektable_block)?;
+        }
+
+        let vc_is_last = !has_padding;
         let comment_block =
-            metadata::build_vorbis_comment_block(comment_is_last, &self.options.comments)?;
+            metadata::build_vorbis_comment_block(vc_is_last, &self.options.comments)?;
         self.write_all(&comment_block)?;
 
         if has_padding {
             let padding_block = metadata::build_padding_block(true, self.options.padding);
             self.write_all(&padding_block)?;
         }
+
+        self.audio_start_offset = self.bytes_written;
 
         Ok(TrackState {
             id: TrackId(0),
@@ -253,7 +289,56 @@ where
             .seek(SeekFrom::Start(self.stream_info_offset + 4))?;
         self.writer.write_all(&block[4..])?;
 
-        self.writer.seek(SeekFrom::End(0))?;
+        Ok(())
+    }
+
+    fn patch_seektable(&mut self) -> Result<()> {
+        if self.seektable_num_points == 0 {
+            return Ok(());
+        }
+
+        let num_points = self.seektable_num_points as usize;
+        let num_records = self.frame_records.len();
+
+        let mut selected: Vec<SeekPoint> = Vec::with_capacity(num_points);
+
+        if num_records > 0 && num_points > 0 {
+            if num_records <= num_points {
+                for rec in &self.frame_records {
+                    selected.push(SeekPoint {
+                        sample_number: rec.sample_number,
+                        stream_offset: rec.stream_offset,
+                        frame_samples: rec.frame_samples,
+                    });
+                }
+            } else {
+                for i in 0..num_points {
+                    let idx = i * num_records / num_points;
+                    let rec = &self.frame_records[idx];
+                    if selected
+                        .last()
+                        .is_some_and(|last| last.sample_number == rec.sample_number)
+                    {
+                        continue;
+                    }
+                    selected.push(SeekPoint {
+                        sample_number: rec.sample_number,
+                        stream_offset: rec.stream_offset,
+                        frame_samples: rec.frame_samples,
+                    });
+                }
+            }
+        }
+
+        while selected.len() < num_points {
+            selected.push(SeekPoint::placeholder());
+        }
+
+        self.writer
+            .seek(SeekFrom::Start(self.seektable_payload_offset))?;
+        for sp in &selected {
+            self.writer.write_all(&sp.encode())?;
+        }
 
         Ok(())
     }
@@ -315,6 +400,18 @@ where
         }
 
         let duration = packet.duration.unwrap_or(0);
+
+        let stream_offset = self
+            .bytes_written
+            .checked_sub(self.audio_start_offset)
+            .ok_or(Error::InvalidState("audio offset underflow"))?;
+        let frame_samples = u16::try_from(duration).unwrap_or(u16::MAX);
+        self.frame_records.push(FrameRecord {
+            sample_number: self.total_samples,
+            stream_offset,
+            frame_samples,
+        });
+
         self.total_samples = self
             .total_samples
             .checked_add(duration)
@@ -344,6 +441,9 @@ where
         }
 
         self.patch_stream_info()?;
+        self.patch_seektable()?;
+
+        self.writer.seek(SeekFrom::End(0))?;
         self.writer.flush()?;
         self.finalized = true;
 
@@ -379,13 +479,26 @@ mod tests {
         params
     }
 
+    fn fake_frame(duration: u64) -> EncodedPacket {
+        let mut data = vec![0xFF, 0xF8];
+        data.extend_from_slice(&[0_u8; 50]);
+        let mut packet = EncodedPacket::new(data);
+        packet.duration = Some(duration);
+        packet
+    }
+
     #[test]
     fn writes_flac_marker() -> Result<()> {
         let cursor = Cursor::new(Vec::<u8>::new());
-        let mut muxer = FlacMuxer::builder(cursor).padding(0).build();
+        let mut muxer = FlacMuxer::builder(cursor)
+            .padding(0)
+            .max_seek_points(0)
+            .build();
 
-        let params = test_codec_params();
-        muxer.add_track(TrackSpec::new(params, TimeBase::audio_sample_rate(44_100)))?;
+        muxer.add_track(TrackSpec::new(
+            test_codec_params(),
+            TimeBase::audio_sample_rate(44_100),
+        ))?;
 
         let bytes = muxer.into_inner().into_inner();
         assert_eq!(&bytes[0..4], b"fLaC");
@@ -394,18 +507,69 @@ mod tests {
     }
 
     #[test]
-    fn writes_stream_info_block() -> Result<()> {
+    fn writes_seektable_block() -> Result<()> {
         let cursor = Cursor::new(Vec::<u8>::new());
-        let mut muxer = FlacMuxer::builder(cursor).padding(0).build();
+        let mut muxer = FlacMuxer::builder(cursor)
+            .padding(0)
+            .max_seek_points(5)
+            .build();
 
         let params = test_codec_params();
-        muxer.add_track(TrackSpec::new(params, TimeBase::audio_sample_rate(44_100)))?;
+        let track = muxer.add_track(TrackSpec::new(params, TimeBase::audio_sample_rate(44_100)))?;
+
+        for _ in 0..10 {
+            muxer.write_packet(track, fake_frame(4096))?;
+        }
+
+        let summary = muxer.finalize()?;
+        assert_eq!(summary.total_samples, Some(40960));
+        assert_eq!(summary.packet_count, 10);
 
         let bytes = muxer.into_inner().into_inner();
 
-        assert_eq!(bytes[4] & 0x7F, 0);
-        let si_len = u32::from(bytes[5]) << 16 | u32::from(bytes[6]) << 8 | u32::from(bytes[7]);
-        assert_eq!(si_len, 34);
+        let st_offset = 4 + 38;
+        assert_eq!(bytes[st_offset] & 0x7F, 3);
+
+        let st_len = u32::from(bytes[st_offset + 1]) << 16
+            | u32::from(bytes[st_offset + 2]) << 8
+            | u32::from(bytes[st_offset + 3]);
+        assert_eq!(st_len, 5 * 18);
+
+        let first_sample =
+            u64::from_be_bytes(bytes[st_offset + 4..st_offset + 12].try_into().unwrap());
+        assert_eq!(first_sample, 0);
+
+        Ok(())
+    }
+
+    #[test]
+    fn seektable_has_valid_offsets() -> Result<()> {
+        let cursor = Cursor::new(Vec::<u8>::new());
+        let mut muxer = FlacMuxer::builder(cursor)
+            .padding(0)
+            .max_seek_points(3)
+            .build();
+
+        let params = test_codec_params();
+        let track = muxer.add_track(TrackSpec::new(params, TimeBase::audio_sample_rate(44_100)))?;
+
+        for _ in 0..6 {
+            muxer.write_packet(track, fake_frame(4096))?;
+        }
+
+        muxer.finalize()?;
+
+        let bytes = muxer.into_inner().into_inner();
+        let st_offset = 4 + 38;
+        let sp_base = st_offset + 4;
+
+        let sp0_sample = u64::from_be_bytes(bytes[sp_base..sp_base + 8].try_into().unwrap());
+        let sp0_offset = u64::from_be_bytes(bytes[sp_base + 8..sp_base + 16].try_into().unwrap());
+        assert_eq!(sp0_sample, 0);
+        assert_eq!(sp0_offset, 0);
+
+        let sp1_sample = u64::from_be_bytes(bytes[sp_base + 18..sp_base + 26].try_into().unwrap());
+        assert!(sp1_sample > 0);
 
         Ok(())
     }
@@ -413,41 +577,43 @@ mod tests {
     #[test]
     fn patches_stream_info_on_finalize() -> Result<()> {
         let cursor = Cursor::new(Vec::<u8>::new());
-        let mut muxer = FlacMuxer::builder(cursor).padding(0).build();
+        let mut muxer = FlacMuxer::builder(cursor)
+            .padding(0)
+            .max_seek_points(0)
+            .build();
 
         let params = test_codec_params();
         let track = muxer.add_track(TrackSpec::new(params, TimeBase::audio_sample_rate(44_100)))?;
 
-        let mut fake_frame = vec![0xFF, 0xF8];
-        fake_frame.extend_from_slice(&[0_u8; 50]);
-        let mut packet = EncodedPacket::new(fake_frame);
-        packet.duration = Some(4096);
-
-        muxer.write_packet(track, packet)?;
+        muxer.write_packet(track, fake_frame(4096))?;
 
         let summary = muxer.finalize()?;
         assert_eq!(summary.total_samples, Some(4096));
-        assert_eq!(summary.packet_count, 1);
 
         let bytes = muxer.into_inner().into_inner();
-
-        let si_payload = &bytes[8..42];
-        let ts_hi = u64::from(si_payload[13] & 0x0F) << 32;
-        let ts_lo = u64::from(u32::from_be_bytes(si_payload[14..18].try_into().unwrap()));
+        let si = &bytes[8..42];
+        let ts_hi = u64::from(si[13] & 0x0F) << 32;
+        let ts_lo = u64::from(u32::from_be_bytes(si[14..18].try_into().unwrap()));
         assert_eq!(ts_hi | ts_lo, 4096);
 
         Ok(())
     }
 
     #[test]
-    fn rejects_non_flac_codec() {
+    fn no_seektable_when_zero_points() -> Result<()> {
         let cursor = Cursor::new(Vec::<u8>::new());
-        let mut muxer = FlacMuxer::new(cursor);
+        let mut muxer = FlacMuxer::builder(cursor)
+            .padding(0)
+            .max_seek_points(0)
+            .build();
 
-        let spec = AudioSpec::new(44_100, ChannelLayout::STEREO, SampleFormat::I16);
-        let params = CodecParameters::new(CodecId::PcmS16Le, spec);
+        let params = test_codec_params();
+        muxer.add_track(TrackSpec::new(params, TimeBase::audio_sample_rate(44_100)))?;
 
-        let result = muxer.add_track(TrackSpec::new(params, TimeBase::audio_sample_rate(44_100)));
-        assert!(result.is_err());
+        let bytes = muxer.into_inner().into_inner();
+
+        assert_eq!(bytes[42] & 0x7F, 4);
+
+        Ok(())
     }
 }

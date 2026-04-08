@@ -6,7 +6,7 @@ use dissonia_core::packet::{EncodedPacket, PacketFlags};
 use dissonia_core::units::Timestamp;
 use dissonia_core::{Error, Result};
 
-use mousiki::c_style_api::opus_encoder::{OpusEncoderCtlRequest, opus_encoder_ctl};
+use mousiki::c_style_api::opus_encoder::{opus_encoder_ctl, OpusEncoderCtlRequest};
 use mousiki::{
     Application as MousikiApplication, Bitrate as MousikiBitrate, Channels as MousikiChannels,
     Encoder as MousikiEncoder, EncoderBuilderError as MousikiEncoderBuilderError,
@@ -572,14 +572,9 @@ fn validate_spec(spec: AudioSpec) -> Result<()> {
         ));
     }
 
-    match spec.channels {
-        channels if channels == ChannelLayout::MONO => {}
-        channels if channels == ChannelLayout::STEREO => {}
-        _ => {
-            return Err(Error::Unsupported(
-                "opus top-level encoder currently supports only mono or stereo channel layouts",
-            ));
-        }
+    let ch = spec.channels.count();
+    if ch == 0 || ch > 8 {
+        return Err(Error::Unsupported("opus encoder supports 1–8 channels"));
     }
 
     match spec.sample_format {
@@ -635,19 +630,32 @@ fn resolve_stream_mapping(
     layout: ChannelLayout,
     requested_family: Option<u8>,
 ) -> Result<OpusStreamMapping> {
-    match requested_family.unwrap_or(0) {
-        0 => family0_stream_mapping(layout),
-        family => Err(Error::Unsupported(match family {
-            1 => {
-                "opus surround/family-1 metadata is supported in CodecParameters and Ogg headers, but the multistream encoder backend is not wired yet"
-            }
-            255 => {
-                "opus family-255 metadata is supported in CodecParameters and Ogg headers, but the multistream encoder backend is not wired yet"
-            }
-            _ => {
-                "requested opus mapping family is not supported by the current encoder implementation"
-            }
-        })),
+    let ch = layout.count();
+
+    match requested_family {
+        Some(0) | None if ch <= 2 => family0_stream_mapping(layout),
+        None if ch > 2 => {
+            let ch_u8 = u8::try_from(ch)
+                .map_err(|_| Error::Unsupported("opus channel count exceeds u8"))?;
+            dissonia_core::codecs::opus_family1_stream_mapping(ch_u8).ok_or(
+                Error::Unsupported("opus mapping family 1 does not support this channel count"),
+            )
+        }
+        Some(0) => family0_stream_mapping(layout),
+        Some(1) => {
+            let ch_u8 = u8::try_from(ch)
+                .map_err(|_| Error::Unsupported("opus channel count exceeds u8"))?;
+            dissonia_core::codecs::opus_family1_stream_mapping(ch_u8).ok_or(
+                Error::Unsupported("opus mapping family 1 does not support this channel count"),
+            )
+        }
+        Some(255) => Err(Error::Unsupported(
+            "opus family-255 metadata is supported in CodecParameters and Ogg headers, but the multistream encoder backend is not wired yet",
+        )),
+        Some(_) => Err(Error::Unsupported(
+            "requested opus mapping family is not supported by the current encoder implementation",
+        )),
+        None => unreachable!("None case handled in guard above"),
     }
 }
 
@@ -699,13 +707,15 @@ fn frame_samples_for_duration(
 }
 
 fn to_mousiki_channels(layout: ChannelLayout) -> Result<(MousikiChannels, usize)> {
-    if layout == ChannelLayout::MONO {
+    let ch = layout.count();
+    if ch == 1 {
         Ok((MousikiChannels::Mono, 1))
-    } else if layout == ChannelLayout::STEREO {
+    } else if ch == 2 {
         Ok((MousikiChannels::Stereo, 2))
     } else {
         Err(Error::Unsupported(
-            "opus top-level encoder currently supports only mono or stereo channel layouts",
+            "opus multistream encoding (>2 channels) requires a multistream backend; mousiki only supports mono/stereo. \
+             The stream mapping metadata has been populated correctly — wire an opus-sys or audiopus backend to enable surround encoding.",
         ))
     }
 }

@@ -22,6 +22,12 @@ pub use dissonia_codec_opus::{
     OpusEncoderOptions, OpusFrameDuration, OpusSignal,
 };
 
+#[cfg(feature = "flac")]
+pub use dissonia_codec_flac as codec_flac;
+
+#[cfg(feature = "flac")]
+pub use dissonia_codec_flac::{FlacEncoder, FlacEncoderBuilder, FlacEncoderOptions};
+
 #[cfg(feature = "riff")]
 pub use dissonia_format_riff as format_riff;
 
@@ -33,6 +39,12 @@ pub use dissonia_format_ogg as format_ogg;
 
 #[cfg(feature = "ogg")]
 pub use dissonia_format_ogg::{OggOpusMuxer, OggOpusMuxerBuilder, OggOpusMuxerOptions};
+
+#[cfg(feature = "flac-container")]
+pub use dissonia_format_flac as format_flac;
+
+#[cfg(feature = "flac-container")]
+pub use dissonia_format_flac::{FlacMuxer, FlacMuxerBuilder, FlacMuxerOptions};
 
 pub mod prelude {
     pub use dissonia_common::vorbis::VorbisComments;
@@ -59,9 +71,15 @@ pub mod prelude {
         OpusEncoderOptions, OpusFrameDuration, OpusSignal,
     };
 
+    #[cfg(feature = "flac")]
+    pub use dissonia_codec_flac::{FlacEncoder, FlacEncoderBuilder, FlacEncoderOptions};
+
     #[cfg(feature = "riff")]
     pub use dissonia_format_riff::{WavMuxer, WavMuxerBuilder, WavMuxerOptions};
 
     #[cfg(feature = "ogg")]
     pub use dissonia_format_ogg::{OggOpusMuxer, OggOpusMuxerBuilder, OggOpusMuxerOptions};
+
+    #[cfg(feature = "flac-container")]
+    pub use dissonia_format_flac::{FlacMuxer, FlacMuxerBuilder, FlacMuxerOptions};
 }

@@ -5,8 +5,10 @@ members = [
     "dissonia-core",
     "dissonia-codec-pcm",
     "dissonia-codec-opus",
+    "dissonia-codec-flac",
     "dissonia-format-riff",
     "dissonia-format-ogg",
+    "dissonia-format-flac",
 ]
 resolver = "3"
 

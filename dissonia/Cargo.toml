@@ -6,19 +6,23 @@ license.workspace = true
 rust-version.workspace = true
 
 [features]
-default = ["pcm", "opus", "riff", "ogg"]
+default = ["pcm", "opus", "flac", "riff", "ogg", "flac-container"]
 pcm = ["dep:dissonia-codec-pcm"]
 opus = ["dep:dissonia-codec-opus"]
+flac = ["dep:dissonia-codec-flac"]
 riff = ["dep:dissonia-format-riff"]
 ogg = ["dep:dissonia-format-ogg"]
+flac-container = ["dep:dissonia-format-flac"]
 
 [dependencies]
 dissonia-common = { path = "../dissonia-common" }
 dissonia-core = { path = "../dissonia-core" }
 dissonia-codec-pcm = { path = "../dissonia-codec-pcm", optional = true }
 dissonia-codec-opus = { path = "../dissonia-codec-opus", optional = true }
+dissonia-codec-flac = { path = "../dissonia-codec-flac", optional = true }
 dissonia-format-riff = { path = "../dissonia-format-riff", optional = true }
 dissonia-format-ogg = { path = "../dissonia-format-ogg", optional = true }
+dissonia-format-flac = { path = "../dissonia-format-flac", optional = true }
 
 [lints]
 workspace = true

@@ -18,12 +18,21 @@ checksum = "9330f8b2ff13f34540b44e946ef35111825727b38d33286ef986142615121801"
 name = "dissonia"
 version = "0.1.0"
 dependencies = [
+ "dissonia-codec-flac",
  "dissonia-codec-opus",
  "dissonia-codec-pcm",
  "dissonia-common",
  "dissonia-core",
+ "dissonia-format-flac",
  "dissonia-format-ogg",
  "dissonia-format-riff",
+]
+
+[[package]]
+name = "dissonia-codec-flac"
+version = "0.1.0"
+dependencies = [
+ "dissonia-core",
 ]
 
 [[package]]
@@ -48,6 +57,14 @@ version = "0.1.0"
 [[package]]
 name = "dissonia-core"
 version = "0.1.0"
+
+[[package]]
+name = "dissonia-format-flac"
+version = "0.1.0"
+dependencies = [
+ "dissonia-common",
+ "dissonia-core",
+]
 
 [[package]]
 name = "dissonia-format-ogg"

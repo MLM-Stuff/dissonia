@@ -8,6 +8,7 @@ use crate::Result;
 pub enum FormatId {
     Riff,
     Ogg,
+    Flac,
     IsoBmff,
 }
 
@@ -15,6 +16,7 @@ pub enum FormatId {
 pub struct FinalizeSummary {
     pub bytes_written: Option<u64>,
     pub packet_count: u64,
+    pub total_samples: Option<u64>,
 }
 
 pub trait Muxer: Send {

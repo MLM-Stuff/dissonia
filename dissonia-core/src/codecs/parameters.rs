@@ -10,6 +10,7 @@ pub enum CodecId {
     PcmF32Le,
     PcmF64Le,
     Opus,
+    Flac,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -38,6 +39,39 @@ impl OpusStreamMapping {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
+pub struct FlacStreamInfo {
+    pub min_block_size: u16,
+    pub max_block_size: u16,
+    pub min_frame_size: u32,
+    pub max_frame_size: u32,
+    pub bits_per_sample: u8,
+    pub total_samples: u64,
+    pub md5: [u8; 16],
+}
+
+impl FlacStreamInfo {
+    #[must_use]
+    pub fn new(bits_per_sample: u8) -> Self {
+        Self {
+            min_block_size: 0,
+            max_block_size: 0,
+            min_frame_size: 0,
+            max_frame_size: 0,
+            bits_per_sample,
+            total_samples: 0,
+            md5: [0; 16],
+        }
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum CodecSpecific {
+    Opus(OpusStreamMapping),
+    Flac(FlacStreamInfo),
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct CodecParameters {
     pub codec: CodecId,
     pub sample_rate: u32,
@@ -47,7 +81,7 @@ pub struct CodecParameters {
     pub frame_samples: Option<u32>,
     pub encoder_delay: u32,
     pub encoder_padding: u32,
-    pub opus_stream_mapping: Option<OpusStreamMapping>,
+    pub codec_specific: Option<CodecSpecific>,
     pub extradata: Box<[u8]>,
 }
 
@@ -63,8 +97,24 @@ impl CodecParameters {
             frame_samples: None,
             encoder_delay: 0,
             encoder_padding: 0,
-            opus_stream_mapping: None,
+            codec_specific: None,
             extradata: Box::new([]),
+        }
+    }
+
+    #[must_use]
+    pub fn opus_stream_mapping(&self) -> Option<&OpusStreamMapping> {
+        match &self.codec_specific {
+            Some(CodecSpecific::Opus(mapping)) => Some(mapping),
+            _ => None,
+        }
+    }
+
+    #[must_use]
+    pub fn flac_stream_info(&self) -> Option<&FlacStreamInfo> {
+        match &self.codec_specific {
+            Some(CodecSpecific::Flac(info)) => Some(info),
+            _ => None,
         }
     }
 }

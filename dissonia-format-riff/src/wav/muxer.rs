@@ -268,6 +268,7 @@ where
         Ok(FinalizeSummary {
             bytes_written: Some(bytes_written),
             packet_count: self.packet_count,
+            total_samples: None,
         })
     }
 }

@@ -5,6 +5,8 @@
 pub use dissonia_common as common;
 pub use dissonia_core as core;
 
+pub use dissonia_common::vorbis::VorbisComments;
+
 #[cfg(feature = "pcm")]
 pub use dissonia_codec_pcm as codec_pcm;
 
@@ -33,11 +35,13 @@ pub use dissonia_format_ogg as format_ogg;
 pub use dissonia_format_ogg::{OggOpusMuxer, OggOpusMuxerBuilder, OggOpusMuxerOptions};
 
 pub mod prelude {
+    pub use dissonia_common::vorbis::VorbisComments;
     pub use dissonia_core::audio::{
         AudioBufferRef, AudioSpec, ChannelLayout, ChannelPosition, SampleFormat,
     };
     pub use dissonia_core::codecs::{
-        CodecId, CodecParameters, Encoder, OpusStreamMapping, PacketSink, VecPacketSink,
+        CodecId, CodecParameters, CodecSpecific, Encoder, FlacStreamInfo, OpusStreamMapping,
+        PacketSink, VecPacketSink,
     };
     pub use dissonia_core::formats::{
         FinalizeSummary, FormatId, Muxer, MuxerExt, TrackId, TrackSpec, TrackWriter,

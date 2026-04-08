@@ -53,6 +53,7 @@ version = "0.1.0"
 name = "dissonia-format-ogg"
 version = "0.1.0"
 dependencies = [
+ "dissonia-common",
  "dissonia-core",
 ]
 

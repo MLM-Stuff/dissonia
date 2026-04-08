@@ -1,10 +1,12 @@
 use dissonia_core::audio::{AudioBufferRef, AudioSpec, ChannelLayout, SampleFormat};
-use dissonia_core::codecs::{CodecId, CodecParameters, Encoder, OpusStreamMapping, PacketSink};
+use dissonia_core::codecs::{
+    CodecId, CodecParameters, CodecSpecific, Encoder, OpusStreamMapping, PacketSink,
+};
 use dissonia_core::packet::{EncodedPacket, PacketFlags};
 use dissonia_core::units::Timestamp;
 use dissonia_core::{Error, Result};
 
-use mousiki::c_style_api::opus_encoder::{opus_encoder_ctl, OpusEncoderCtlRequest};
+use mousiki::c_style_api::opus_encoder::{OpusEncoderCtlRequest, opus_encoder_ctl};
 use mousiki::{
     Application as MousikiApplication, Bitrate as MousikiBitrate, Channels as MousikiChannels,
     Encoder as MousikiEncoder, EncoderBuilderError as MousikiEncoderBuilderError,
@@ -303,7 +305,7 @@ impl OpusEncoder {
             .transpose()?;
         params.encoder_delay = encoder_delay;
         params.encoder_padding = 0;
-        params.opus_stream_mapping = Some(stream_mapping);
+        params.codec_specific = Some(CodecSpecific::Opus(stream_mapping));
 
         Ok(Self {
             spec,
@@ -636,9 +638,15 @@ fn resolve_stream_mapping(
     match requested_family.unwrap_or(0) {
         0 => family0_stream_mapping(layout),
         family => Err(Error::Unsupported(match family {
-            1 => "opus surround/family-1 metadata is supported in CodecParameters and Ogg headers, but the multistream encoder backend is not wired yet",
-            255 => "opus family-255 metadata is supported in CodecParameters and Ogg headers, but the multistream encoder backend is not wired yet",
-            _ => "requested opus mapping family is not supported by the current encoder implementation",
+            1 => {
+                "opus surround/family-1 metadata is supported in CodecParameters and Ogg headers, but the multistream encoder backend is not wired yet"
+            }
+            255 => {
+                "opus family-255 metadata is supported in CodecParameters and Ogg headers, but the multistream encoder backend is not wired yet"
+            }
+            _ => {
+                "requested opus mapping family is not supported by the current encoder implementation"
+            }
         })),
     }
 }
@@ -907,11 +915,7 @@ mod tests {
         let spec = AudioSpec::new(48_000, ChannelLayout::STEREO, SampleFormat::I16);
         let encoder = OpusEncoder::new(spec)?;
 
-        let mapping = encoder
-            .codec_parameters()
-            .opus_stream_mapping
-            .as_ref()
-            .unwrap();
+        let mapping = encoder.codec_parameters().opus_stream_mapping().unwrap();
 
         assert_eq!(mapping.family, 0);
         assert_eq!(mapping.stream_count, 1);

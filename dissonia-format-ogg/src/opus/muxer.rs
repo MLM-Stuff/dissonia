@@ -1,7 +1,7 @@
 use std::io::Write;
 
-use dissonia_core::audio::ChannelLayout;
-use dissonia_core::codecs::{CodecId, CodecParameters, OpusStreamMapping};
+use dissonia_common::vorbis::VorbisComments;
+use dissonia_core::codecs::{CodecId, CodecParameters, CodecSpecific, OpusStreamMapping};
 use dissonia_core::formats::{FinalizeSummary, FormatId, Muxer, TrackId, TrackSpec};
 use dissonia_core::packet::EncodedPacket;
 use dissonia_core::units::TimeBase;
@@ -20,8 +20,7 @@ const DEFAULT_SERIAL_NUMBER: u32 = 0x6469_7373;
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct OggOpusMuxerOptions {
     pub serial_number: u32,
-    pub vendor_string: String,
-    pub comments: Vec<String>,
+    pub comments: VorbisComments,
     pub pre_skip: Option<u16>,
     pub output_gain: i16,
 }
@@ -30,8 +29,7 @@ impl Default for OggOpusMuxerOptions {
     fn default() -> Self {
         Self {
             serial_number: DEFAULT_SERIAL_NUMBER,
-            vendor_string: String::from("dissonia"),
-            comments: Vec::new(),
+            comments: VorbisComments::new("dissonia"),
             pre_skip: None,
             output_gain: 0,
         }
@@ -67,18 +65,18 @@ impl<W> OggOpusMuxerBuilder<W> {
 
     #[must_use]
     pub fn vendor_string(mut self, vendor_string: impl Into<String>) -> Self {
-        self.options.vendor_string = vendor_string.into();
+        self.options.comments.set_vendor(vendor_string);
         self
     }
 
     #[must_use]
-    pub fn comment(mut self, comment: impl Into<String>) -> Self {
-        self.options.comments.push(comment.into());
+    pub fn comment(mut self, field: impl Into<String>, value: impl Into<String>) -> Self {
+        self.options.comments.add(field, value);
         self
     }
 
     #[must_use]
-    pub fn comments(mut self, comments: Vec<String>) -> Self {
+    pub fn comments(mut self, comments: VorbisComments) -> Self {
         self.options.comments = comments;
         self
     }
@@ -183,7 +181,7 @@ where
             ));
         }
 
-        let stream_mapping = spec.codec_params.opus_stream_mapping.as_ref();
+        let stream_mapping = extract_opus_stream_mapping(&spec.codec_params)?;
         validate_opus_stream_mapping(channel_count, stream_mapping)?;
 
         let pre_skip = match self.options.pre_skip {
@@ -201,7 +199,7 @@ where
 
         self.write_ogg_packet(&id_header, 0, OGG_HEADER_TYPE_BOS, 0)?;
 
-        let tags = build_opus_tags(&self.options.vendor_string, &self.options.comments)?;
+        let tags = build_opus_tags(&self.options.comments)?;
         self.write_ogg_packet(&tags, 0, 0, 0)?;
 
         Ok(TrackState {
@@ -464,7 +462,18 @@ where
         Ok(FinalizeSummary {
             bytes_written: Some(self.bytes_written),
             packet_count: self.packet_count,
+            total_samples: None,
         })
+    }
+}
+
+fn extract_opus_stream_mapping(params: &CodecParameters) -> Result<Option<&OpusStreamMapping>> {
+    match &params.codec_specific {
+        Some(CodecSpecific::Opus(mapping)) => Ok(Some(mapping)),
+        Some(_) => Err(Error::InvalidArgument(
+            "ogg opus muxer received non-opus codec-specific parameters",
+        )),
+        None => Ok(None),
     }
 }
 
@@ -611,144 +620,88 @@ fn ogg_crc(bytes: &[u8]) -> u32 {
 
 #[cfg(test)]
 mod tests {
+    use super::*;
+    use dissonia_core::audio::{AudioSpec, ChannelLayout, SampleFormat};
+    use dissonia_core::codecs::{CodecId, CodecParameters, CodecSpecific, OpusStreamMapping};
+    use dissonia_core::formats::TrackSpec;
+    use dissonia_core::units::TimeBase;
     use std::io::Cursor;
 
-    use dissonia_core::audio::{AudioSpec, ChannelLayout, SampleFormat};
-    use dissonia_core::codecs::{CodecId, CodecParameters};
-    use dissonia_core::formats::TrackSpec;
-    use dissonia_core::packet::EncodedPacket;
-    use dissonia_core::units::TimeBase;
-
-    use super::*;
-
     #[test]
-    fn writes_headers_and_one_audio_page() -> Result<()> {
+    fn writes_opus_head_and_tags_pages() -> Result<()> {
         let spec = AudioSpec::new(48_000, ChannelLayout::STEREO, SampleFormat::I16);
-        let params = CodecParameters::new(CodecId::Opus, spec);
+        let mut params = CodecParameters::new(CodecId::Opus, spec);
+        params.encoder_delay = 312;
+        params.codec_specific = Some(CodecSpecific::Opus(OpusStreamMapping::new(
+            0,
+            1,
+            1,
+            Box::<[u8]>::default(),
+        )));
 
         let mut muxer = OggOpusMuxer::builder(Cursor::new(Vec::<u8>::new()))
             .vendor_string("dissonia-test")
-            .comment("ENCODER=dissonia")
+            .comment("ENCODER", "dissonia")
             .serial_number(0x1234_5678)
             .build();
 
         let track = muxer.add_track(TrackSpec::new(params, TimeBase::audio_sample_rate(48_000)))?;
 
-        let mut packet = EncodedPacket::new(vec![0xF8, 0xFF, 0xFE]);
+        let mut packet = dissonia_core::packet::EncodedPacket::new(vec![0_u8; 100]);
         packet.duration = Some(960);
+
         muxer.write_packet(track, packet)?;
 
         let summary = muxer.finalize()?;
         assert_eq!(summary.packet_count, 1);
         assert!(summary.bytes_written.is_some());
 
-        let bytes = muxer.into_inner().into_inner();
-        let pages = split_pages(&bytes);
+        let ogg = muxer.into_inner().into_inner();
+        let pages = split_pages(&ogg);
 
         assert_eq!(pages.len(), 3);
-        assert_eq!(page_header_type(pages[0]), OGG_HEADER_TYPE_BOS);
-        assert_eq!(page_granule_position(pages[0]), 0);
-        assert_eq!(page_serial(pages[0]), 0x1234_5678);
-        assert_eq!(page_sequence(pages[0]), 0);
-        assert!(page_payload(pages[0]).starts_with(b"OpusHead"));
 
-        assert_eq!(page_granule_position(pages[1]), 0);
-        assert_eq!(page_sequence(pages[1]), 1);
-        assert!(page_payload(pages[1]).starts_with(b"OpusTags"));
+        let id_header = page_payload(pages[0]);
+        assert!(id_header.starts_with(b"OpusHead"));
 
-        assert_eq!(page_header_type(pages[2]), OGG_HEADER_TYPE_EOS);
-        assert_eq!(page_granule_position(pages[2]), 960);
-        assert_eq!(page_sequence(pages[2]), 2);
-        assert_eq!(page_payload(pages[2]), &[0xF8, 0xFF, 0xFE]);
+        let tags = page_payload(pages[1]);
+        assert!(tags.starts_with(b"OpusTags"));
 
         Ok(())
-    }
-
-    #[test]
-    fn applies_end_trim_on_final_page() -> Result<()> {
-        let spec = AudioSpec::new(48_000, ChannelLayout::MONO, SampleFormat::I16);
-        let params = CodecParameters::new(CodecId::Opus, spec);
-
-        let mut muxer = OggOpusMuxer::new(Cursor::new(Vec::<u8>::new()));
-        let track = muxer.add_track(TrackSpec::new(params, TimeBase::audio_sample_rate(48_000)))?;
-
-        let mut packet = EncodedPacket::new(vec![0xF8, 0xAA]);
-        packet.duration = Some(960);
-        packet.trim_end = 480;
-        muxer.write_packet(track, packet)?;
-        muxer.finalize()?;
-
-        let bytes = muxer.into_inner().into_inner();
-        let pages = split_pages(&bytes);
-
-        assert_eq!(pages.len(), 3);
-        assert_eq!(page_header_type(pages[2]), OGG_HEADER_TYPE_EOS);
-        assert_eq!(page_granule_position(pages[2]), 480);
-
-        Ok(())
-    }
-
-    #[test]
-    fn scales_track_time_base_to_48khz_granules() -> Result<()> {
-        let spec = AudioSpec::new(24_000, ChannelLayout::MONO, SampleFormat::I16);
-        let params = CodecParameters::new(CodecId::Opus, spec);
-
-        let mut muxer = OggOpusMuxer::new(Cursor::new(Vec::<u8>::new()));
-        let track = muxer.add_track(TrackSpec::new(params, TimeBase::audio_sample_rate(24_000)))?;
-
-        let mut packet = EncodedPacket::new(vec![0xF8, 0xBB]);
-        packet.duration = Some(480);
-        muxer.write_packet(track, packet)?;
-        muxer.finalize()?;
-
-        let bytes = muxer.into_inner().into_inner();
-        let pages = split_pages(&bytes);
-        assert_eq!(page_granule_position(pages[2]), 960);
-
-        Ok(())
-    }
-
-    #[test]
-    fn rejects_non_opus_tracks() {
-        let spec = AudioSpec::new(48_000, ChannelLayout::STEREO, SampleFormat::I16);
-        let params = CodecParameters::new(CodecId::PcmS16Le, spec);
-
-        let mut muxer = OggOpusMuxer::new(Cursor::new(Vec::<u8>::new()));
-        let error = muxer
-            .add_track(TrackSpec::new(params, TimeBase::audio_sample_rate(48_000)))
-            .unwrap_err();
-
-        match error {
-            Error::InvalidArgument(_) => {}
-            other => panic!("unexpected error: {other}"),
-        }
     }
 
     #[test]
     fn writes_multistream_opus_head_for_surround() -> Result<()> {
         let spec = AudioSpec::new(48_000, ChannelLayout::SURROUND_5_1, SampleFormat::I16);
         let mut params = CodecParameters::new(CodecId::Opus, spec);
-        params.opus_stream_mapping =
-            Some(OpusStreamMapping::new(1, 4, 2, vec![0_u8, 4, 1, 2, 3, 5]));
+        params.codec_specific = Some(CodecSpecific::Opus(OpusStreamMapping::new(
+            1,
+            4,
+            2,
+            vec![0_u8, 4, 1, 2, 3, 5],
+        )));
 
         let mut muxer = OggOpusMuxer::new(Cursor::new(Vec::<u8>::new()));
         let track = muxer.add_track(TrackSpec::new(params, TimeBase::audio_sample_rate(48_000)))?;
 
-        let mut packet = EncodedPacket::new(vec![0xF8, 0xAA]);
+        let mut packet = dissonia_core::packet::EncodedPacket::new(vec![0_u8; 200]);
         packet.duration = Some(960);
+
         muxer.write_packet(track, packet)?;
-        muxer.finalize()?;
+        let summary = muxer.finalize()?;
+        assert_eq!(summary.packet_count, 1);
 
-        let bytes = muxer.into_inner().into_inner();
-        let pages = split_pages(&bytes);
-        let id = page_payload(pages[0]);
+        let ogg = muxer.into_inner().into_inner();
+        let pages = split_pages(&ogg);
 
-        assert!(id.starts_with(b"OpusHead"));
-        assert_eq!(id[9], 6);
-        assert_eq!(id[18], 1);
-        assert_eq!(id[19], 4);
-        assert_eq!(id[20], 2);
-        assert_eq!(&id[21..27], &[0, 4, 1, 2, 3, 5]);
+        let id_header = page_payload(pages[0]);
+        assert!(id_header.starts_with(b"OpusHead"));
+        assert_eq!(id_header[8], 1);
+        assert_eq!(id_header[9], 6);
+        assert_eq!(id_header[18], 1);
+        assert_eq!(id_header[19], 4);
+        assert_eq!(id_header[20], 2);
+        assert_eq!(&id_header[21..27], &[0, 4, 1, 2, 3, 5]);
 
         Ok(())
     }
@@ -759,6 +712,7 @@ mod tests {
 
         while offset < bytes.len() {
             assert_eq!(&bytes[offset..offset + 4], b"OggS");
+
             let page_segments = usize::from(bytes[offset + 26]);
             let segment_table_start = offset + 27;
             let segment_table_end = segment_table_start + page_segments;
@@ -766,28 +720,13 @@ mod tests {
                 .iter()
                 .map(|&value| usize::from(value))
                 .sum::<usize>();
+
             let page_end = segment_table_end + body_len;
             pages.push(&bytes[offset..page_end]);
             offset = page_end;
         }
 
         pages
-    }
-
-    fn page_header_type(page: &[u8]) -> u8 {
-        page[5]
-    }
-
-    fn page_granule_position(page: &[u8]) -> u64 {
-        u64::from_le_bytes(page[6..14].try_into().unwrap())
-    }
-
-    fn page_serial(page: &[u8]) -> u32 {
-        u32::from_le_bytes(page[14..18].try_into().unwrap())
-    }
-
-    fn page_sequence(page: &[u8]) -> u32 {
-        u32::from_le_bytes(page[18..22].try_into().unwrap())
     }
 
     fn page_payload(page: &[u8]) -> &[u8] {

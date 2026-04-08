@@ -7,6 +7,7 @@ rust-version.workspace = true
 
 [dependencies]
 dissonia-core = { path = "../dissonia-core" }
+md-5 = { version = "0.10", default-features = false }
 
 [lints]
 workspace = true

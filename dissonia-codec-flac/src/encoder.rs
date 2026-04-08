@@ -6,6 +6,8 @@ use dissonia_core::packet::{EncodedPacket, PacketFlags};
 use dissonia_core::units::Timestamp;
 use dissonia_core::{Error, Result};
 
+use md5::{Digest, Md5};
+
 use crate::frame;
 use crate::options::FlacEncoderOptions;
 
@@ -57,6 +59,7 @@ pub struct FlacEncoder {
     pending: Vec<i64>,
     next_pts: u64,
     frame_number: u32,
+    md5_hasher: Md5,
 }
 
 impl FlacEncoder {
@@ -111,12 +114,33 @@ impl FlacEncoder {
             pending: Vec::new(),
             next_pts: 0,
             frame_number: 0,
+            md5_hasher: Md5::new(),
         })
     }
 
     #[must_use]
     pub const fn options(&self) -> FlacEncoderOptions {
         self.options
+    }
+
+    #[must_use]
+    pub fn pcm_md5(&self) -> Option<[u8; 16]> {
+        self.params.flac_stream_info().map(|info| info.md5)
+    }
+
+    fn hash_samples(&mut self, samples: &[i64]) {
+        let bytes_per_sample = usize::from(self.bits_per_sample / 8);
+        for &s in samples {
+            let le = (s as i32).to_le_bytes();
+            self.md5_hasher.update(&le[..bytes_per_sample]);
+        }
+    }
+
+    fn finalize_md5(&mut self) {
+        let digest = self.md5_hasher.clone().finalize();
+        if let Some(CodecSpecific::Flac(info)) = self.params.codec_specific.as_mut() {
+            info.md5 = digest.into();
+        }
     }
 
     fn samples_to_i64(input: AudioBufferRef<'_>) -> Result<Vec<i64>> {
@@ -141,7 +165,9 @@ impl FlacEncoder {
 
         while self.pending.len() >= block_samples {
             let block: Vec<i64> = self.pending.drain(..block_samples).collect();
+            self.hash_samples(&block);
             self.encode_block(&block, self.options.block_size, sink)?;
+            self.finalize_md5();
         }
 
         Ok(())
@@ -230,6 +256,7 @@ impl Encoder for FlacEncoder {
 
         let samples = Self::samples_to_i64(input)?;
         self.pending.extend_from_slice(&samples);
+        self.hash_samples(&samples);
         self.drain_blocks(sink)
     }
 
@@ -254,13 +281,21 @@ impl Encoder for FlacEncoder {
         }
 
         let block = std::mem::take(&mut self.pending);
-        self.encode_block(&block, remaining_frames, sink)
+        self.hash_samples(&block);
+        self.encode_block(&block, remaining_frames, sink)?;
+        self.finalize_md5();
+
+        Ok(())
     }
 
     fn reset(&mut self) -> Result<()> {
         self.pending.clear();
         self.next_pts = 0;
         self.frame_number = 0;
+        self.md5_hasher = Md5::new();
+        if let Some(CodecSpecific::Flac(info)) = self.params.codec_specific.as_mut() {
+            info.md5 = [0; 16];
+        }
         Ok(())
     }
 }
@@ -375,6 +410,42 @@ mod tests {
         assert_eq!(info.min_block_size, 4096);
         assert_eq!(info.max_block_size, 4096);
         assert_eq!(info.bits_per_sample, 16);
+
+        Ok(())
+    }
+
+    #[test]
+    fn computes_md5_on_flush() -> Result<()> {
+        let spec = AudioSpec::new(44_100, ChannelLayout::MONO, SampleFormat::I16);
+        let mut encoder = FlacEncoder::builder(spec).block_size(256).build()?;
+        let mut sink = VecPacketSink::new();
+
+        let samples: Vec<i16> = (0..256).map(|i| i as i16).collect();
+        encoder.encode(AudioBufferRef::I16(&samples), &mut sink)?;
+        encoder.flush(&mut sink)?;
+
+        let md5 = encoder.pcm_md5();
+        assert!(md5.is_some());
+        assert_ne!(md5.unwrap(), [0u8; 16]);
+
+        Ok(())
+    }
+
+    #[test]
+    fn resets_md5_on_reset() -> Result<()> {
+        let spec = AudioSpec::new(44_100, ChannelLayout::MONO, SampleFormat::I16);
+        let mut encoder = FlacEncoder::builder(spec).block_size(256).build()?;
+        let mut sink = VecPacketSink::new();
+
+        let samples: Vec<i16> = (0..256).map(|i| i as i16).collect();
+        encoder.encode(AudioBufferRef::I16(&samples), &mut sink)?;
+        encoder.flush(&mut sink)?;
+
+        assert_ne!(encoder.pcm_md5().unwrap(), [0u8; 16]);
+
+        encoder.reset()?;
+
+        assert_eq!(encoder.pcm_md5().unwrap(), [0u8; 16]);
 
         Ok(())
     }

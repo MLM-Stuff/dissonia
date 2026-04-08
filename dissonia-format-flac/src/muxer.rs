@@ -132,6 +132,7 @@ struct TrackState {
     bits_per_sample: u8,
     min_block_size: u16,
     max_block_size: u16,
+    md5: [u8; 16],
 }
 
 impl<W> FlacMuxer<W> {
@@ -148,6 +149,29 @@ impl<W> FlacMuxer<W> {
     #[must_use]
     pub fn into_inner(self) -> W {
         self.writer
+    }
+}
+
+impl<W> FlacMuxer<W>
+where
+    W: Write + Seek,
+{
+    pub fn update_stream_info(&mut self, track: TrackId, md5: [u8; 16]) -> Result<()> {
+        if self.finalized {
+            return Err(Error::InvalidState("muxer already finalized"));
+        }
+
+        let state = self
+            .track
+            .as_mut()
+            .ok_or(Error::InvalidState("no track to update"))?;
+
+        if state.id != track {
+            return Err(Error::InvalidArgument("unknown track id"));
+        }
+
+        state.md5 = md5;
+        Ok(())
     }
 }
 
@@ -226,7 +250,7 @@ where
             channels,
             bits_per_sample,
             0,
-            &[0; 16],
+            &flac_info.md5,
         );
         self.write_all(&stream_info_block)?;
 
@@ -258,6 +282,7 @@ where
             bits_per_sample,
             min_block_size: flac_info.min_block_size,
             max_block_size: flac_info.max_block_size,
+            md5: flac_info.md5,
         })
     }
 
@@ -282,7 +307,7 @@ where
             state.channels,
             state.bits_per_sample,
             self.total_samples,
-            &[0; 16],
+            &state.md5,
         );
 
         self.writer

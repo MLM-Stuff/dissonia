@@ -45,7 +45,7 @@ dependencies = [
 
 [[package]]
 name = "dissonia"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "dissonia-codec-flac",
  "dissonia-codec-opus",
@@ -59,7 +59,7 @@ dependencies = [
 
 [[package]]
 name = "dissonia-codec-flac"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "dissonia-core",
  "md-5",
@@ -67,7 +67,7 @@ dependencies = [
 
 [[package]]
 name = "dissonia-codec-opus"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "dissonia-core",
  "mousiki",
@@ -75,22 +75,22 @@ dependencies = [
 
 [[package]]
 name = "dissonia-codec-pcm"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "dissonia-core",
 ]
 
 [[package]]
 name = "dissonia-common"
-version = "0.1.0"
+version = "0.1.1"
 
 [[package]]
 name = "dissonia-core"
-version = "0.1.0"
+version = "0.1.1"
 
 [[package]]
 name = "dissonia-format-flac"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "dissonia-common",
  "dissonia-core",
@@ -98,7 +98,7 @@ dependencies = [
 
 [[package]]
 name = "dissonia-format-ogg"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "dissonia-common",
  "dissonia-core",
@@ -106,7 +106,7 @@ dependencies = [
 
 [[package]]
 name = "dissonia-format-riff"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "dissonia-common",
  "dissonia-core",

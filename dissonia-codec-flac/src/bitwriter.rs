@@ -62,9 +62,9 @@ impl BitWriter {
 
     pub fn write_unary(&mut self, count: u32) {
         for _ in 0..count {
-            self.write_bit(true);
+            self.write_bit(false);
         }
-        self.write_bit(false);
+        self.write_bit(true);
     }
 
     pub fn write_utf8_u32(&mut self, value: u32) {

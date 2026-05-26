@@ -7,7 +7,7 @@ rust-version.workspace = true
 
 [dependencies]
 dissonia-core = { path = "../dissonia-core" }
-mousiki = "0.2.1"
+mousiki = { git = "https://github.com/mlm-games/mousiki-recovered" }
 
 [lints]
 workspace = true

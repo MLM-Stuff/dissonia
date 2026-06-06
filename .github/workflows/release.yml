@@ -1,0 +1,133 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*.*.*"
+  workflow_dispatch:
+    inputs:
+      mark_prerelease:
+        description: "Mark as prerelease"
+        required: true
+        default: false
+        type: boolean
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  prepare-version:
+    runs-on: ubuntu-latest
+    outputs:
+      version_name: ${{ steps.meta.outputs.version_name }}
+      tag: ${{ steps.meta.outputs.tag }}
+      commit_sha: ${{ steps.meta.outputs.commit_sha }}
+      is_prerelease: ${{ steps.prerelease.outputs.is_prerelease }}
+      release_notes: ${{ steps.notes.outputs.release-notes }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Set version/tag metadata
+        id: meta
+        run: |
+          if [[ "${{ github.event_name }}" == "push" ]]; then
+            TAG="${GITHUB_REF_NAME}"
+            VERSION="${TAG#v}"
+            echo "version_name=$VERSION" >> "$GITHUB_OUTPUT"
+            echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+            echo "commit_sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+          else
+            OLD_VERSION=$(grep -m1 '^version\s*=\s*"' Cargo.toml | sed -E 's/.*"([^"]+)".*/\1/')
+            IFS='.' read -r MAJ MIN PAT <<<"$OLD_VERSION"
+            NEW_VERSION="$MAJ.$MIN.$((PAT+1))"
+            sed -i -E "0,/^version\s*=.*/s//version = \"$NEW_VERSION\"/" Cargo.toml
+            cargo update -w
+            git config --local user.email "github-actions[bot]@users.noreply.github.com"
+            git config --local user.name "github-actions[bot]"
+            git add Cargo.toml Cargo.lock
+            git commit -m "chore: bump to v$NEW_VERSION [skip ci]" || true
+            git push
+            TAG="v$NEW_VERSION"
+            git tag -a "$TAG" -m "Release $TAG"
+            git push origin "$TAG"
+            echo "version_name=$NEW_VERSION" >> "$GITHUB_OUTPUT"
+            echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+            echo "commit_sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Validate tag matches workspace version
+        run: |
+          VERSION=$(grep -m1 '^version\s*=\s*"' Cargo.toml | sed -E 's/.*"([^"]+)".*/\1/')
+          if [ "v$VERSION" != "${{ steps.meta.outputs.tag }}" ]; then
+            echo "Version mismatch: tag ${{ steps.meta.outputs.tag }} != Cargo.toml v$VERSION"
+            exit 1
+          fi
+
+      - name: Detect prerelease
+        id: prerelease
+        run: |
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" && "${{ inputs.mark_prerelease }}" == "true" ]]; then
+            echo "is_prerelease=true" >> "$GITHUB_OUTPUT"
+          elif [[ "${{ steps.meta.outputs.version_name }}" == *-* ]]; then
+            echo "is_prerelease=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "is_prerelease=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Generate release notes
+        id: notes
+        uses: mlm-games/release-notes-generator@main
+        with:
+          version: ${{ steps.meta.outputs.version_name }}
+          format: "- {{subject}}"
+          exclude-patterns: "chore:,ci:,docs:,build:,Bump version,Merge pull request,[skip ci]"
+          auto-commit: "false"
+
+  publish:
+    name: Publish all crates to crates.io
+    needs: prepare-version
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ needs.prepare-version.outputs.commit_sha }}
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Publish all workspace crates
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+        run: |
+          for i in 1 2 3; do
+            if cargo publish --workspace --locked; then exit 0; fi
+            echo "Publish failed, retrying in $((i*10))s..."; sleep $((i*10))
+          done
+          exit 1
+
+  release:
+    name: Create GitHub Release
+    needs:
+      - prepare-version
+      - publish
+    runs-on: ubuntu-latest
+    steps:
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ needs.prepare-version.outputs.tag }}
+          name: ${{ needs.prepare-version.outputs.tag }}
+          target_commitish: ${{ needs.prepare-version.outputs.commit_sha }}
+          generate_release_notes: true
+          prerelease: ${{ needs.prepare-version.outputs.is_prerelease }}
+          body: ${{ needs.prepare-version.outputs.release_notes }}

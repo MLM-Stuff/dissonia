@@ -28,6 +28,16 @@ pedantic = { level = "warn", priority = -2 }
 module_name_repetitions = "allow"
 too_many_arguments = "allow"
 
+[workspace.dependencies]
+dissonia-common = { version = "0.1.2", path = "dissonia-common" }
+dissonia-core = { version = "0.1.2", path = "dissonia-core" }
+dissonia-codec-pcm = { version = "0.1.2", path = "dissonia-codec-pcm" }
+dissonia-codec-opus = { version = "0.1.2", path = "dissonia-codec-opus" }
+dissonia-codec-flac = { version = "0.1.2", path = "dissonia-codec-flac" }
+dissonia-format-riff = { version = "0.1.2", path = "dissonia-format-riff" }
+dissonia-format-ogg = { version = "0.1.2", path = "dissonia-format-ogg" }
+dissonia-format-flac = { version = "0.1.2", path = "dissonia-format-flac" }
+
 [profile.release]
 codegen-units = 1
 lto = "thin"

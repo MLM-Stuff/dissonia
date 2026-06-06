@@ -15,14 +15,14 @@ ogg = ["dep:dissonia-format-ogg"]
 flac-container = ["dep:dissonia-format-flac"]
 
 [dependencies]
-dissonia-common = { path = "../dissonia-common" }
-dissonia-core = { path = "../dissonia-core" }
-dissonia-codec-pcm = { path = "../dissonia-codec-pcm", optional = true }
-dissonia-codec-opus = { path = "../dissonia-codec-opus", optional = true }
-dissonia-codec-flac = { path = "../dissonia-codec-flac", optional = true }
-dissonia-format-riff = { path = "../dissonia-format-riff", optional = true }
-dissonia-format-ogg = { path = "../dissonia-format-ogg", optional = true }
-dissonia-format-flac = { path = "../dissonia-format-flac", optional = true }
+dissonia-common.workspace = true
+dissonia-core.workspace = true
+dissonia-codec-pcm = { workspace = true, optional = true }
+dissonia-codec-opus = { workspace = true, optional = true }
+dissonia-codec-flac = { workspace = true, optional = true }
+dissonia-format-riff = { workspace = true, optional = true }
+dissonia-format-ogg = { workspace = true, optional = true }
+dissonia-format-flac = { workspace = true, optional = true }
 
 [lints]
 workspace = true

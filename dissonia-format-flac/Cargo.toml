@@ -6,8 +6,8 @@ license.workspace = true
 rust-version.workspace = true
 
 [dependencies]
-dissonia-common = { path = "../dissonia-common" }
-dissonia-core = { path = "../dissonia-core" }
+dissonia-common.workspace = true
+dissonia-core.workspace = true
 
 [lints]
 workspace = true

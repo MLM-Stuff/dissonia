@@ -66,7 +66,7 @@ jobs:
 
       - name: Validate tag matches workspace version
         run: |
-          VERSION=$(grep -m1 '^version\s*=\s*"' Cargo.toml | sed -E 's/.*"([^"]+)".*/\1/')
+          VERSION=$(cargo metadata --no-deps --format-version=1 | jq -r '.packages[0].version')
           if [ "v$VERSION" != "${{ steps.meta.outputs.tag }}" ]; then
             echo "Version mismatch: tag ${{ steps.meta.outputs.tag }} != Cargo.toml v$VERSION"
             exit 1

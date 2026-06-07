@@ -16,7 +16,7 @@ resolver = "3"
 edition = "2024"
 license = "MIT OR Apache-2.0"
 rust-version = "1.92"
-version = "0.1.2"
+version = "0.1.3"
 
 [workspace.lints.rust]
 unsafe_code = "forbid"
@@ -29,14 +29,14 @@ module_name_repetitions = "allow"
 too_many_arguments = "allow"
 
 [workspace.dependencies]
-dissonia-common = { version = "0.1.2", path = "dissonia-common" }
-dissonia-core = { version = "0.1.2", path = "dissonia-core" }
-dissonia-codec-pcm = { version = "0.1.2", path = "dissonia-codec-pcm" }
-dissonia-codec-opus = { version = "0.1.2", path = "dissonia-codec-opus" }
-dissonia-codec-flac = { version = "0.1.2", path = "dissonia-codec-flac" }
-dissonia-format-riff = { version = "0.1.2", path = "dissonia-format-riff" }
-dissonia-format-ogg = { version = "0.1.2", path = "dissonia-format-ogg" }
-dissonia-format-flac = { version = "0.1.2", path = "dissonia-format-flac" }
+dissonia-common = { version = "0.1.3", path = "dissonia-common" }
+dissonia-core = { version = "0.1.3", path = "dissonia-core" }
+dissonia-codec-pcm = { version = "0.1.3", path = "dissonia-codec-pcm" }
+dissonia-codec-opus = { version = "0.1.3", path = "dissonia-codec-opus" }
+dissonia-codec-flac = { version = "0.1.3", path = "dissonia-codec-flac" }
+dissonia-format-riff = { version = "0.1.3", path = "dissonia-format-riff" }
+dissonia-format-ogg = { version = "0.1.3", path = "dissonia-format-ogg" }
+dissonia-format-flac = { version = "0.1.3", path = "dissonia-format-flac" }
 
 [profile.release]
 codegen-units = 1

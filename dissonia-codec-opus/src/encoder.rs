@@ -6,13 +6,13 @@ use dissonia_core::packet::{EncodedPacket, PacketFlags};
 use dissonia_core::units::Timestamp;
 use dissonia_core::{Error, Result};
 
-use mousiki::c_style_api::opus_encoder::{opus_encoder_ctl, OpusEncoderCtlRequest};
-use mousiki::{
-    Application as MousikiApplication, Bitrate as MousikiBitrate, Channels as MousikiChannels,
-    Encoder as MousikiEncoder, EncoderBuilderError as MousikiEncoderBuilderError,
-    FrameDuration as MousikiFrameDuration, OpusEncodeError as MousikiOpusEncodeError,
-    OpusEncoderCtlError as MousikiOpusEncoderCtlError,
-    OpusEncoderInitError as MousikiOpusEncoderInitError, Signal as MousikiSignal,
+use oporus::c_style_api::opus_encoder::{OpusEncoderCtlRequest, opus_encoder_ctl};
+use oporus::{
+    Application as OporusApplication, Bitrate as OporusBitrate, Channels as OporusChannels,
+    Encoder as OporusEncoder, EncoderBuilderError as OporusEncoderBuilderError,
+    FrameDuration as OporusFrameDuration, OpusEncodeError as OporusOpusEncodeError,
+    OpusEncoderCtlError as OporusOpusEncoderCtlError,
+    OpusEncoderInitError as OporusOpusEncoderInitError, Signal as OporusSignal,
 };
 
 use crate::options::{
@@ -152,7 +152,7 @@ pub struct OpusEncoder {
     spec: AudioSpec,
     params: CodecParameters,
     options: OpusEncoderOptions,
-    encoder: MousikiEncoder,
+    encoder: OporusEncoder,
     channels: usize,
     frame_samples: Option<usize>,
     next_pts: u64,
@@ -236,16 +236,15 @@ impl OpusEncoder {
 
         let stream_mapping = resolve_stream_mapping(spec.channels, options.mapping_family)?;
 
-        let (mousiki_channels, channels) = to_mousiki_channels(spec.channels)?;
-
-        let mut builder = MousikiEncoder::builder(
+        let (oporus_channels, channels) = to_oporus_channels(spec.channels)?;
+        let mut builder = OporusEncoder::builder(
             spec.sample_rate,
-            mousiki_channels,
-            to_mousiki_application(options.application),
+            oporus_channels,
+            to_oporus_application(options.application),
         );
 
         if let Some(value) = options.bitrate {
-            builder = builder.bitrate(to_mousiki_bitrate(value)?);
+            builder = builder.bitrate(to_oporus_bitrate(value)?);
         }
 
         if let Some(value) = options.complexity {
@@ -261,11 +260,11 @@ impl OpusEncoder {
         }
 
         if let Some(value) = options.max_bandwidth {
-            builder = builder.max_bandwidth(to_mousiki_bandwidth(value));
+            builder = builder.max_bandwidth(to_oporus_bandwidth(value));
         }
 
         if let Some(value) = options.signal {
-            builder = builder.signal(to_mousiki_signal(value));
+            builder = builder.signal(to_oporus_signal(value));
         }
 
         if let Some(value) = options.inband_fec {
@@ -284,7 +283,7 @@ impl OpusEncoder {
             builder = builder.lsb_depth(i32::from(value));
         }
 
-        builder = builder.frame_duration(to_mousiki_frame_duration(options.frame_duration));
+        builder = builder.frame_duration(to_oporus_frame_duration(options.frame_duration));
 
         if let Some(value) = options.prediction_disabled {
             builder = builder.prediction_disabled(value);
@@ -637,17 +636,17 @@ fn resolve_stream_mapping(
         None if ch > 2 => {
             let ch_u8 = u8::try_from(ch)
                 .map_err(|_| Error::Unsupported("opus channel count exceeds u8"))?;
-            dissonia_core::codecs::opus_family1_stream_mapping(ch_u8).ok_or(
-                Error::Unsupported("opus mapping family 1 does not support this channel count"),
-            )
+            dissonia_core::codecs::opus_family1_stream_mapping(ch_u8).ok_or(Error::Unsupported(
+                "opus mapping family 1 does not support this channel count",
+            ))
         }
         Some(0) => family0_stream_mapping(layout),
         Some(1) => {
             let ch_u8 = u8::try_from(ch)
                 .map_err(|_| Error::Unsupported("opus channel count exceeds u8"))?;
-            dissonia_core::codecs::opus_family1_stream_mapping(ch_u8).ok_or(
-                Error::Unsupported("opus mapping family 1 does not support this channel count"),
-            )
+            dissonia_core::codecs::opus_family1_stream_mapping(ch_u8).ok_or(Error::Unsupported(
+                "opus mapping family 1 does not support this channel count",
+            ))
         }
         Some(255) => Err(Error::Unsupported(
             "opus family-255 metadata is supported in CodecParameters and Ogg headers, but the multistream encoder backend is not wired yet",
@@ -706,74 +705,74 @@ fn frame_samples_for_duration(
     Some(samples as usize)
 }
 
-fn to_mousiki_channels(layout: ChannelLayout) -> Result<(MousikiChannels, usize)> {
+fn to_oporus_channels(layout: ChannelLayout) -> Result<(OporusChannels, usize)> {
     let ch = layout.count();
     if ch == 1 {
-        Ok((MousikiChannels::Mono, 1))
+        Ok((OporusChannels::Mono, 1))
     } else if ch == 2 {
-        Ok((MousikiChannels::Stereo, 2))
+        Ok((OporusChannels::Stereo, 2))
     } else {
         Err(Error::Unsupported(
-            "opus multistream encoding (>2 channels) requires a multistream backend; mousiki only supports mono/stereo. \
+            "opus multistream encoding (>2 channels) requires a multistream backend; oporus only supports mono/stereo. \
              The stream mapping metadata has been populated correctly — wire an opus-sys or audiopus backend to enable surround encoding.",
         ))
     }
 }
 
-const fn to_mousiki_application(value: OpusApplication) -> MousikiApplication {
+const fn to_oporus_application(value: OpusApplication) -> OporusApplication {
     match value {
-        OpusApplication::Voip => MousikiApplication::Voip,
-        OpusApplication::Audio => MousikiApplication::Audio,
-        OpusApplication::LowDelay => MousikiApplication::LowDelay,
+        OpusApplication::Voip => OporusApplication::Voip,
+        OpusApplication::Audio => OporusApplication::Audio,
+        OpusApplication::LowDelay => OporusApplication::LowDelay,
     }
 }
 
-fn to_mousiki_bitrate(value: OpusBitrate) -> Result<MousikiBitrate> {
+fn to_oporus_bitrate(value: OpusBitrate) -> Result<OporusBitrate> {
     match value {
-        OpusBitrate::Auto => Ok(MousikiBitrate::Auto),
-        OpusBitrate::Max => Ok(MousikiBitrate::Max),
+        OpusBitrate::Auto => Ok(OporusBitrate::Auto),
+        OpusBitrate::Max => Ok(OporusBitrate::Max),
         OpusBitrate::Bits(bits) => {
             let bits =
                 i32::try_from(bits).map_err(|_| Error::Unsupported("opus bitrate exceeds i32"))?;
-            Ok(MousikiBitrate::Bits(bits))
+            Ok(OporusBitrate::Bits(bits))
         }
     }
 }
 
-const fn to_mousiki_bandwidth(value: OpusBandwidth) -> mousiki::Bandwidth {
+const fn to_oporus_bandwidth(value: OpusBandwidth) -> oporus::Bandwidth {
     match value {
-        OpusBandwidth::Narrowband => mousiki::Bandwidth::Narrowband,
-        OpusBandwidth::Mediumband => mousiki::Bandwidth::Mediumband,
-        OpusBandwidth::Wideband => mousiki::Bandwidth::Wideband,
-        OpusBandwidth::Superwideband => mousiki::Bandwidth::Superwideband,
-        OpusBandwidth::Fullband => mousiki::Bandwidth::Fullband,
+        OpusBandwidth::Narrowband => oporus::Bandwidth::Narrowband,
+        OpusBandwidth::Mediumband => oporus::Bandwidth::Mediumband,
+        OpusBandwidth::Wideband => oporus::Bandwidth::Wideband,
+        OpusBandwidth::Superwideband => oporus::Bandwidth::Superwideband,
+        OpusBandwidth::Fullband => oporus::Bandwidth::Fullband,
     }
 }
 
-const fn to_mousiki_signal(value: OpusSignal) -> MousikiSignal {
+const fn to_oporus_signal(value: OpusSignal) -> OporusSignal {
     match value {
-        OpusSignal::Auto => MousikiSignal::Auto,
-        OpusSignal::Voice => MousikiSignal::Voice,
-        OpusSignal::Music => MousikiSignal::Music,
+        OpusSignal::Auto => OporusSignal::Auto,
+        OpusSignal::Voice => OporusSignal::Voice,
+        OpusSignal::Music => OporusSignal::Music,
     }
 }
 
-const fn to_mousiki_frame_duration(value: OpusFrameDuration) -> MousikiFrameDuration {
+const fn to_oporus_frame_duration(value: OpusFrameDuration) -> OporusFrameDuration {
     match value {
-        OpusFrameDuration::Auto => MousikiFrameDuration::Auto,
-        OpusFrameDuration::Ms2_5 => MousikiFrameDuration::Ms2_5,
-        OpusFrameDuration::Ms5 => MousikiFrameDuration::Ms5,
-        OpusFrameDuration::Ms10 => MousikiFrameDuration::Ms10,
-        OpusFrameDuration::Ms20 => MousikiFrameDuration::Ms20,
-        OpusFrameDuration::Ms40 => MousikiFrameDuration::Ms40,
-        OpusFrameDuration::Ms60 => MousikiFrameDuration::Ms60,
-        OpusFrameDuration::Ms80 => MousikiFrameDuration::Ms80,
-        OpusFrameDuration::Ms100 => MousikiFrameDuration::Ms100,
-        OpusFrameDuration::Ms120 => MousikiFrameDuration::Ms120,
+        OpusFrameDuration::Auto => OporusFrameDuration::Auto,
+        OpusFrameDuration::Ms2_5 => OporusFrameDuration::Ms2_5,
+        OpusFrameDuration::Ms5 => OporusFrameDuration::Ms5,
+        OpusFrameDuration::Ms10 => OporusFrameDuration::Ms10,
+        OpusFrameDuration::Ms20 => OporusFrameDuration::Ms20,
+        OpusFrameDuration::Ms40 => OporusFrameDuration::Ms40,
+        OpusFrameDuration::Ms60 => OporusFrameDuration::Ms60,
+        OpusFrameDuration::Ms80 => OporusFrameDuration::Ms80,
+        OpusFrameDuration::Ms100 => OporusFrameDuration::Ms100,
+        OpusFrameDuration::Ms120 => OporusFrameDuration::Ms120,
     }
 }
 
-fn query_lookahead(encoder: &mut MousikiEncoder) -> Result<u32> {
+fn query_lookahead(encoder: &mut OporusEncoder) -> Result<u32> {
     let mut lookahead = 0_i32;
     opus_encoder_ctl(
         encoder.as_raw_mut(),
@@ -785,54 +784,54 @@ fn query_lookahead(encoder: &mut MousikiEncoder) -> Result<u32> {
         .map_err(|_| Error::InvalidState("opus encoder reported a negative lookahead"))
 }
 
-fn map_builder_error(error: MousikiEncoderBuilderError) -> Error {
+fn map_builder_error(error: OporusEncoderBuilderError) -> Error {
     match error {
-        MousikiEncoderBuilderError::Init(error) => map_init_error(error),
-        MousikiEncoderBuilderError::Ctl(error) => map_ctl_error(error),
+        OporusEncoderBuilderError::Init(error) => map_init_error(error),
+        OporusEncoderBuilderError::Ctl(error) => map_ctl_error(error),
     }
 }
 
-fn map_init_error(error: MousikiOpusEncoderInitError) -> Error {
+fn map_init_error(error: OporusOpusEncoderInitError) -> Error {
     match error {
-        MousikiOpusEncoderInitError::BadArgument => {
+        OporusOpusEncoderInitError::BadArgument => {
             Error::InvalidArgument("invalid opus encoder initialization arguments")
         }
-        MousikiOpusEncoderInitError::SilkInit | MousikiOpusEncoderInitError::CeltInit => {
+        OporusOpusEncoderInitError::SilkInit | OporusOpusEncoderInitError::CeltInit => {
             Error::InvalidState("failed to initialize opus encoder internals")
         }
     }
 }
 
-fn map_ctl_error(error: MousikiOpusEncoderCtlError) -> Error {
+fn map_ctl_error(error: OporusOpusEncoderCtlError) -> Error {
     match error {
-        MousikiOpusEncoderCtlError::BadArgument => {
+        OporusOpusEncoderCtlError::BadArgument => {
             Error::InvalidArgument("invalid opus encoder control value")
         }
-        MousikiOpusEncoderCtlError::Unimplemented => {
+        OporusOpusEncoderCtlError::Unimplemented => {
             Error::Unsupported("opus encoder control is unimplemented")
         }
-        MousikiOpusEncoderCtlError::Silk(_) => {
+        OporusOpusEncoderCtlError::Silk(_) => {
             Error::InvalidState("opus silk control operation failed")
         }
-        MousikiOpusEncoderCtlError::InternalError => {
+        OporusOpusEncoderCtlError::InternalError => {
             Error::InvalidState("opus encoder internal error")
         }
     }
 }
 
-fn map_encode_error(error: MousikiOpusEncodeError) -> Error {
+fn map_encode_error(error: OporusOpusEncodeError) -> Error {
     match error {
-        MousikiOpusEncodeError::BadArgument => {
+        OporusOpusEncodeError::BadArgument => {
             Error::InvalidArgument("invalid opus input or frame size")
         }
-        MousikiOpusEncodeError::BufferTooSmall => {
+        OporusOpusEncodeError::BufferTooSmall => {
             Error::InvalidArgument("opus packet buffer too small")
         }
-        MousikiOpusEncodeError::InternalError => Error::InvalidState("opus encoder internal error"),
-        MousikiOpusEncodeError::Unimplemented => {
+        OporusOpusEncodeError::InternalError => Error::InvalidState("opus encoder internal error"),
+        OporusOpusEncodeError::Unimplemented => {
             Error::Unsupported("requested opus encode path is unimplemented")
         }
-        MousikiOpusEncodeError::Silk(_) => Error::InvalidState("opus silk encode operation failed"),
+        OporusOpusEncodeError::Silk(_) => Error::InvalidState("opus silk encode operation failed"),
     }
 }
 

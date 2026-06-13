@@ -48,6 +48,7 @@ name = "dissonia"
 version = "0.1.3"
 dependencies = [
  "dissonia-codec-flac",
+ "dissonia-codec-mp3",
  "dissonia-codec-opus",
  "dissonia-codec-pcm",
  "dissonia-common",
@@ -63,6 +64,14 @@ version = "0.1.3"
 dependencies = [
  "dissonia-core",
  "md-5",
+]
+
+[[package]]
+name = "dissonia-codec-mp3"
+version = "0.1.3"
+dependencies = [
+ "dissonia-core",
+ "meporus",
 ]
 
 [[package]]
@@ -142,6 +151,15 @@ checksum = "d89e7ee0cfbedfc4da3340218492196241d89eefb6dab27de5df917a6d2e78cf"
 dependencies = [
  "cfg-if",
  "digest",
+]
+
+[[package]]
+name = "meporus"
+version = "0.1.1"
+dependencies = [
+ "cfg-if",
+ "libm",
+ "log",
 ]
 
 [[package]]

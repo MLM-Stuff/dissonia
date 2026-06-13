@@ -28,6 +28,12 @@ pub use dissonia_codec_flac as codec_flac;
 #[cfg(feature = "flac")]
 pub use dissonia_codec_flac::{FlacEncoder, FlacEncoderBuilder, FlacEncoderOptions};
 
+#[cfg(feature = "mp3")]
+pub use dissonia_codec_mp3 as codec_mp3;
+
+#[cfg(feature = "mp3")]
+pub use dissonia_codec_mp3::{Mp3Encoder, Mp3EncoderBuilder, Mp3EncoderOptions};
+
 #[cfg(feature = "riff")]
 pub use dissonia_format_riff as format_riff;
 
@@ -53,7 +59,8 @@ pub mod prelude {
     };
     pub use dissonia_core::codecs::{
         opus_family1_stream_mapping, opus_surround_channel_order, CodecId, CodecParameters,
-        CodecSpecific, Encoder, FlacStreamInfo, OpusStreamMapping, PacketSink, VecPacketSink,
+        CodecSpecific, Encoder, FlacStreamInfo, Mp3StreamInfo, OpusStreamMapping, PacketSink,
+        VecPacketSink,
     };
     pub use dissonia_core::formats::{
         FinalizeSummary, FormatId, Muxer, MuxerExt, TrackId, TrackSpec, TrackWriter,
@@ -73,6 +80,9 @@ pub mod prelude {
 
     #[cfg(feature = "flac")]
     pub use dissonia_codec_flac::{FlacEncoder, FlacEncoderBuilder, FlacEncoderOptions};
+
+    #[cfg(feature = "mp3")]
+    pub use dissonia_codec_mp3::{Mp3Encoder, Mp3EncoderBuilder, Mp3EncoderOptions};
 
     #[cfg(feature = "riff")]
     pub use dissonia_format_riff::{WavMuxer, WavMuxerBuilder, WavMuxerOptions};

@@ -10,10 +10,11 @@ homepage.workspace = true
 rust-version.workspace = true
 
 [features]
-default = ["pcm", "opus", "flac", "riff", "ogg", "flac-container"]
+default = ["pcm", "opus", "flac", "mp3", "riff", "ogg", "flac-container"]
 pcm = ["dep:dissonia-codec-pcm"]
 opus = ["dep:dissonia-codec-opus"]
 flac = ["dep:dissonia-codec-flac"]
+mp3 = ["dep:dissonia-codec-mp3"]
 riff = ["dep:dissonia-format-riff"]
 ogg = ["dep:dissonia-format-ogg"]
 flac-container = ["dep:dissonia-format-flac"]
@@ -24,6 +25,7 @@ dissonia-core.workspace = true
 dissonia-codec-pcm = { workspace = true, optional = true }
 dissonia-codec-opus = { workspace = true, optional = true }
 dissonia-codec-flac = { workspace = true, optional = true }
+dissonia-codec-mp3 = { workspace = true, optional = true }
 dissonia-format-riff = { workspace = true, optional = true }
 dissonia-format-ogg = { workspace = true, optional = true }
 dissonia-format-flac = { workspace = true, optional = true }

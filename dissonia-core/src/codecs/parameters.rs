@@ -11,6 +11,7 @@ pub enum CodecId {
     PcmF64Le,
     Opus,
     Flac,
+    Mp3,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -64,11 +65,24 @@ impl FlacStreamInfo {
     }
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Mp3StreamInfo {
+    pub bitrate_bps: u32,
+}
+
+impl Mp3StreamInfo {
+    #[must_use]
+    pub const fn new(bitrate_bps: u32) -> Self {
+        Self { bitrate_bps }
+    }
+}
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum CodecSpecific {
     Opus(OpusStreamMapping),
     Flac(FlacStreamInfo),
+    Mp3(Mp3StreamInfo),
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -114,6 +128,14 @@ impl CodecParameters {
     pub fn flac_stream_info(&self) -> Option<&FlacStreamInfo> {
         match &self.codec_specific {
             Some(CodecSpecific::Flac(info)) => Some(info),
+            _ => None,
+        }
+    }
+
+    #[must_use]
+    pub fn mp3_stream_info(&self) -> Option<&Mp3StreamInfo> {
+        match &self.codec_specific {
+            Some(CodecSpecific::Mp3(info)) => Some(info),
             _ => None,
         }
     }

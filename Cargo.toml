@@ -6,6 +6,7 @@ members = [
     "dissonia-codec-pcm",
     "dissonia-codec-opus",
     "dissonia-codec-flac",
+    "dissonia-codec-mp3",
     "dissonia-format-riff",
     "dissonia-format-ogg",
     "dissonia-format-flac",
@@ -38,6 +39,7 @@ dissonia-core = { version = "0.1.3", path = "dissonia-core" }
 dissonia-codec-pcm = { version = "0.1.3", path = "dissonia-codec-pcm" }
 dissonia-codec-opus = { version = "0.1.3", path = "dissonia-codec-opus" }
 dissonia-codec-flac = { version = "0.1.3", path = "dissonia-codec-flac" }
+dissonia-codec-mp3 = { version = "0.1.3", path = "dissonia-codec-mp3" }
 dissonia-format-riff = { version = "0.1.3", path = "dissonia-format-riff" }
 dissonia-format-ogg = { version = "0.1.3", path = "dissonia-format-ogg" }
 dissonia-format-flac = { version = "0.1.3", path = "dissonia-format-flac" }
